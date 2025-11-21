@@ -1,0 +1,194 @@
+
+import { MatchProfile, ChatSession, Notification, UserProfile, Confession } from '../types';
+import { MOCK_MATCHES, MOCK_NOTIFICATIONS } from '../constants';
+
+// Simple in-memory store with local storage persistence simulation for the demo
+class DataService {
+  private matches: MatchProfile[] = [];
+  private chatSessions: Record<string, ChatSession> = {};
+  private notifications: Notification[] = [...MOCK_NOTIFICATIONS];
+  private confessions: Confession[] = [];
+
+  constructor() {
+    this.loadFromStorage();
+    if (this.confessions.length === 0) {
+        // Add some mock confessions for Amity
+        this.confessions = [
+            {
+                id: 'c1',
+                userId: 'User#A111',
+                text: 'Does anyone else think the library AC is set to arctic mode? 🥶',
+                timestamp: Date.now() - 1000000,
+                likes: 12,
+                reactions: { '🥶': 8, '😂': 4 },
+                comments: [
+                  { id: 'cm1', userId: 'User#Z999', text: 'Bring a hoodie lol', timestamp: Date.now() - 500000 }
+                ],
+                university: 'Amity University, Raipur'
+            },
+            {
+                id: 'c2',
+                userId: 'User#B222',
+                text: 'Saw the cutest person in the canteen today but was too shy to say hi. If you were wearing a red hoodie, hmu.',
+                timestamp: Date.now() - 5000000,
+                likes: 45,
+                reactions: { '❤️': 20, '👀': 15, '🔥': 10 },
+                comments: [],
+                university: 'Amity University, Raipur'
+            }
+        ];
+    }
+  }
+
+  private loadFromStorage() {
+    const storedMatches = localStorage.getItem('oh_matches');
+    const storedChats = localStorage.getItem('oh_chats');
+    const storedNotifs = localStorage.getItem('oh_notifications');
+    const storedConfessions = localStorage.getItem('oh_confessions');
+
+    if (storedMatches) this.matches = JSON.parse(storedMatches);
+    if (storedChats) this.chatSessions = JSON.parse(storedChats);
+    if (storedNotifs) this.notifications = JSON.parse(storedNotifs);
+    if (storedConfessions) this.confessions = JSON.parse(storedConfessions);
+  }
+
+  private saveToStorage() {
+    localStorage.setItem('oh_matches', JSON.stringify(this.matches));
+    localStorage.setItem('oh_chats', JSON.stringify(this.chatSessions));
+    localStorage.setItem('oh_notifications', JSON.stringify(this.notifications));
+    localStorage.setItem('oh_confessions', JSON.stringify(this.confessions));
+  }
+
+  // Matches
+  getMatches() {
+    return this.matches;
+  }
+
+  addMatch(match: MatchProfile, currentUserId: string) {
+    if (!this.matches.find(m => m.id === match.id)) {
+      this.matches = [...this.matches, match];
+      
+      // Initialize chat session
+      const newSession: ChatSession = {
+        matchId: match.id,
+        userA: currentUserId,
+        userB: match.id,
+        messages: [],
+        lastUpdated: Date.now(),
+        isRevealed: false
+      };
+      this.chatSessions[match.id] = newSession;
+      
+      // Add notification
+      const newNotif: Notification = {
+        id: Date.now().toString(),
+        title: "It's a Match!",
+        message: `You matched with ${match.anonymousId}!`,
+        timestamp: Date.now(),
+        read: false,
+        type: 'match'
+      };
+      this.addNotification(newNotif);
+      
+      this.saveToStorage();
+    }
+  }
+
+  removeMatch(matchId: string) {
+    this.matches = this.matches.filter(m => m.id !== matchId);
+    delete this.chatSessions[matchId];
+    this.saveToStorage();
+  }
+
+  // Chats
+  getChatSession(matchId: string) {
+    return this.chatSessions[matchId];
+  }
+
+  addMessage(matchId: string, message: any) {
+    if (this.chatSessions[matchId]) {
+      this.chatSessions[matchId].messages.push(message);
+      this.chatSessions[matchId].lastUpdated = Date.now();
+      this.saveToStorage();
+    }
+  }
+
+  // Notifications
+  getNotifications() {
+    return this.notifications;
+  }
+
+  addNotification(notif: Notification) {
+    this.notifications = [notif, ...this.notifications];
+    this.saveToStorage();
+  }
+
+  markNotificationsRead() {
+    this.notifications = this.notifications.map(n => ({ ...n, read: true }));
+    this.saveToStorage();
+  }
+
+  // Confessions
+  getConfessions(university: string) {
+      return this.confessions.filter(c => c.university === university).sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  addConfession(confession: Confession) {
+      // Ensure comments array exists
+      if (!confession.comments) confession.comments = [];
+      if (!confession.reactions) confession.reactions = {};
+      this.confessions = [confession, ...this.confessions];
+      this.saveToStorage();
+  }
+
+  reactToConfession(confessionId: string, emoji: string) {
+      const conf = this.confessions.find(c => c.id === confessionId);
+      if (conf) {
+          if (!conf.reactions) conf.reactions = {};
+          
+          // Increment specific emoji
+          conf.reactions[emoji] = (conf.reactions[emoji] || 0) + 1;
+          
+          // Also increment total likes for sorting/compat
+          conf.likes += 1;
+          
+          this.saveToStorage();
+      }
+  }
+
+  addComment(confessionId: string, text: string, userId: string) {
+    const conf = this.confessions.find(c => c.id === confessionId);
+    if (conf) {
+        if (!conf.comments) conf.comments = [];
+        conf.comments.push({
+            id: Date.now().toString(),
+            userId: userId,
+            text: text,
+            timestamp: Date.now()
+        });
+        this.saveToStorage();
+    }
+  }
+
+  // Queue Logic
+  getMatchQueue(user: UserProfile) {
+    const targetGender = user.gender === 'Male' ? 'Female' : 'Male';
+    // Filter matches: Must match target gender AND not be the user themselves AND not already matched
+    return MOCK_MATCHES.filter(m => 
+      m.gender === targetGender && 
+      m.id !== user.id &&
+      !this.matches.find(existing => existing.id === m.id)
+    );
+  }
+  
+  // Reset data for demo purposes
+  reset() {
+      this.matches = [];
+      this.chatSessions = {};
+      this.notifications = [...MOCK_NOTIFICATIONS];
+      this.confessions = [];
+      this.saveToStorage();
+  }
+}
+
+export const dataService = new DataService();
