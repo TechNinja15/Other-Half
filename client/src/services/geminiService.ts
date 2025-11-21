@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { MatchProfile } from "../types";
 
 const getAiClient = () => {
+  // NOTE: This assumes the API key is set in Vercel's Environment Variables
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
     console.warn("API_KEY is not set. Gemini features will be disabled.");
@@ -31,7 +32,8 @@ export const generateIceBreaker = async (
       contents: prompt,
     });
 
-    return response.text.trim();
+    // FIX TS18048: Add '!' to assert response.text is not null/undefined
+    return response.text!.trim(); 
   } catch (error) {
     console.error("Gemini Error:", error);
     return "Hey! What's your favorite thing about your major?";
@@ -59,7 +61,8 @@ export const checkCompatibility = async (
       contents: prompt,
     });
 
-    return response.text.trim();
+    // FIX TS18048: Add '!' to assert response.text is not null/undefined
+    return response.text!.trim(); 
   } catch (error) {
     return "You both seem to have unique tastes!";
   }
