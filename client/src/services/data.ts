@@ -12,31 +12,31 @@ class DataService {
   constructor() {
     this.loadFromStorage();
     if (this.confessions.length === 0) {
-        // Add some mock confessions for Amity
-        this.confessions = [
-            {
-                id: 'c1',
-                userId: 'User#A111',
-                text: 'Does anyone else think the library AC is set to arctic mode? 🥶',
-                timestamp: Date.now() - 1000000,
-                likes: 12,
-                reactions: { '🥶': 8, '😂': 4 },
-                comments: [
-                  { id: 'cm1', userId: 'User#Z999', text: 'Bring a hoodie lol', timestamp: Date.now() - 500000 }
-                ],
-                university: 'Amity University, Raipur'
-            },
-            {
-                id: 'c2',
-                userId: 'User#B222',
-                text: 'Saw the cutest person in the canteen today but was too shy to say hi. If you were wearing a red hoodie, hmu.',
-                timestamp: Date.now() - 5000000,
-                likes: 45,
-                reactions: { '❤️': 20, '👀': 15, '🔥': 10 },
-                comments: [],
-                university: 'Amity University, Raipur'
-            }
-        ];
+      // Add some mock confessions for Amity
+      this.confessions = [
+        {
+          id: 'c1',
+          userId: 'User#A111',
+          text: 'Does anyone else think the library AC is set to arctic mode? 🥶',
+          timestamp: Date.now() - 1000000,
+          likes: 12,
+          reactions: { '🥶': 8, '😂': 4 },
+          comments: [
+            { id: 'cm1', userId: 'User#Z999', text: 'Bring a hoodie lol', timestamp: Date.now() - 500000 }
+          ],
+          university: 'Amity University, Raipur'
+        },
+        {
+          id: 'c2',
+          userId: 'User#B222',
+          text: 'Saw the cutest person in the canteen today but was too shy to say hi. If you were wearing a red hoodie, hmu.',
+          timestamp: Date.now() - 5000000,
+          likes: 45,
+          reactions: { '❤️': 20, '👀': 15, '🔥': 10 },
+          comments: [],
+          university: 'Amity University, Raipur'
+        }
+      ];
     }
   }
 
@@ -67,7 +67,7 @@ class DataService {
   addMatch(match: MatchProfile, currentUserId: string) {
     if (!this.matches.find(m => m.id === match.id)) {
       this.matches = [...this.matches, match];
-      
+
       // Initialize chat session
       const newSession: ChatSession = {
         matchId: match.id,
@@ -78,7 +78,7 @@ class DataService {
         isRevealed: false
       };
       this.chatSessions[match.id] = newSession;
-      
+
       // Add notification
       const newNotif: Notification = {
         id: Date.now().toString(),
@@ -89,7 +89,7 @@ class DataService {
         type: 'match'
       };
       this.addNotification(newNotif);
-      
+
       this.saveToStorage();
     }
   }
@@ -130,43 +130,51 @@ class DataService {
 
   // Confessions
   getConfessions(university: string) {
-      return this.confessions.filter(c => c.university === university).sort((a, b) => b.timestamp - a.timestamp);
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    return this.confessions
+      .filter(c => c.university === university && c.timestamp > twentyFourHoursAgo)
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  getConfessionCountLast24h(userId: string) {
+    const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+    return this.confessions.filter(c => c.userId === userId && c.timestamp > twentyFourHoursAgo).length;
   }
 
   addConfession(confession: Confession) {
-      // Ensure comments array exists
-      if (!confession.comments) confession.comments = [];
-      if (!confession.reactions) confession.reactions = {};
-      this.confessions = [confession, ...this.confessions];
-      this.saveToStorage();
+    // Ensure comments array exists
+    if (!confession.comments) confession.comments = [];
+    if (!confession.reactions) confession.reactions = {};
+    this.confessions = [confession, ...this.confessions];
+    this.saveToStorage();
   }
 
   reactToConfession(confessionId: string, emoji: string) {
-      const conf = this.confessions.find(c => c.id === confessionId);
-      if (conf) {
-          if (!conf.reactions) conf.reactions = {};
-          
-          // Increment specific emoji
-          conf.reactions[emoji] = (conf.reactions[emoji] || 0) + 1;
-          
-          // Also increment total likes for sorting/compat
-          conf.likes += 1;
-          
-          this.saveToStorage();
-      }
+    const conf = this.confessions.find(c => c.id === confessionId);
+    if (conf) {
+      if (!conf.reactions) conf.reactions = {};
+
+      // Increment specific emoji
+      conf.reactions[emoji] = (conf.reactions[emoji] || 0) + 1;
+
+      // Also increment total likes for sorting/compat
+      conf.likes += 1;
+
+      this.saveToStorage();
+    }
   }
 
   addComment(confessionId: string, text: string, userId: string) {
     const conf = this.confessions.find(c => c.id === confessionId);
     if (conf) {
-        if (!conf.comments) conf.comments = [];
-        conf.comments.push({
-            id: Date.now().toString(),
-            userId: userId,
-            text: text,
-            timestamp: Date.now()
-        });
-        this.saveToStorage();
+      if (!conf.comments) conf.comments = [];
+      conf.comments.push({
+        id: Date.now().toString(),
+        userId: userId,
+        text: text,
+        timestamp: Date.now()
+      });
+      this.saveToStorage();
     }
   }
 
@@ -174,20 +182,20 @@ class DataService {
   getMatchQueue(user: UserProfile) {
     const targetGender = user.gender === 'Male' ? 'Female' : 'Male';
     // Filter matches: Must match target gender AND not be the user themselves AND not already matched
-    return MOCK_MATCHES.filter(m => 
-      m.gender === targetGender && 
+    return MOCK_MATCHES.filter(m =>
+      m.gender === targetGender &&
       m.id !== user.id &&
       !this.matches.find(existing => existing.id === m.id)
     );
   }
-  
+
   // Reset data for demo purposes
   reset() {
-      this.matches = [];
-      this.chatSessions = {};
-      this.notifications = [...MOCK_NOTIFICATIONS];
-      this.confessions = [];
-      this.saveToStorage();
+    this.matches = [];
+    this.chatSessions = {};
+    this.notifications = [...MOCK_NOTIFICATIONS];
+    this.confessions = [];
+    this.saveToStorage();
   }
 }
 
