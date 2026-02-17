@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: other-half-server
+    runtime: node
+    rootDirectory: server      # <--- CRITICAL: Tells Render to look in the server folder
+    buildCommand: npm install  # <--- CRITICAL: Installs dependencies instead of failing on "build"
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DAILY_API_KEY
+        sync: false  # Set this in Render Dashboard for security
