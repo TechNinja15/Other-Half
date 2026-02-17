@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { MatchProfile } from '../types';
 import { useNavigate } from 'react-router-dom';
-import { Heart, X, MapPin, GraduationCap, Ghost, Sparkles, School, Globe, Bell } from 'lucide-react';
+import { Heart, X, MapPin, GraduationCap, Ghost, Sparkles, School, Globe, Bell, Shuffle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { analytics } from '../utils/analytics';
 
@@ -417,6 +417,15 @@ export const Home: React.FC = () => {
                             Global
                         </button>
                     </div>
+
+                    {/* Discover Button (Omegle) */}
+                    <button
+                        onClick={() => navigate('/discover')}
+                        className="relative p-2.5 bg-neon/10 backdrop-blur-2xl rounded-full border border-neon/30 text-neon hover:text-white transition-all hover:bg-neon hover:border-neon hover:scale-105 active:scale-95 group shadow-[0_0_15px_rgba(255,0,127,0.2)]"
+                        title="Random Video Discover"
+                    >
+                        <Shuffle className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+                    </button>
 
                     {/* Notification Button - Now rightmost for better mobile reach */}
                     <button

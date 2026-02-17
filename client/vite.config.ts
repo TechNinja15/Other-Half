@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      'peerjs': path.resolve(__dirname, '../node_modules/peerjs')
+      'peerjs': path.resolve(__dirname, './node_modules/peerjs')
     }
   },
   server: {

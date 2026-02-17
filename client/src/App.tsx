@@ -23,6 +23,7 @@ const CinemaDate = lazy(() => import('./pages/virtual-dates/CinemaDate').then(m 
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const Developers = lazy(() => import('./pages/Developers').then(m => ({ default: m.Developers })));
 const Confessions = lazy(() => import('./pages/Confessions').then(m => ({ default: m.Confessions })));
+const Discover = lazy(() => import('./pages/Discover').then(m => ({ default: m.Discover })));
 
 // Static pages lazy loaded individually
 const About = lazy(() => import('./pages/StaticPages').then(m => ({ default: m.About })));
@@ -143,6 +144,7 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/:id" element={<Profile />} />
             <Route path="/confessions" element={<Confessions />} />
+            <Route path="/discover" element={<Discover />} />
           </Route>
 
           {/* Catch all */}
