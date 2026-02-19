@@ -57,7 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
                         </p>
 
                         {/* Error Details (collapsible in production) */}
-                        {process.env.NODE_ENV === 'development' && this.state.error && (
+                        {import.meta.env.DEV && this.state.error && (
                             <div className="mb-6 p-4 bg-red-500/5 border border-red-500/20 rounded-xl text-left">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Bug className="w-4 h-4 text-red-400" />

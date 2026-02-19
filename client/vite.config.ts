@@ -5,9 +5,12 @@ import path from 'path'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: {
+    'process.env': {}
+  },
   resolve: {
     alias: {
-      'peerjs': path.resolve(__dirname, './node_modules/peerjs')
+      '@': path.resolve(__dirname, './src'),
     }
   },
   server: {
