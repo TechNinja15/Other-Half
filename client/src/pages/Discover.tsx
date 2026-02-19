@@ -7,18 +7,25 @@ import AgoraRTC, {
 import {
     X, Mic, MicOff, Video as VideoIcon, VideoOff,
     PhoneOff, Sparkles, Send, SkipForward, Hand,
-    MessageCircle, Ghost, Info, Shuffle
+    MessageCircle, Ghost, Info, Shuffle, Heart
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { supabase } from '../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 
-// Omegle-style Discover Page
+// Omegle-style Discover Chat Page
 export const Discover: React.FC = () => {
     const { currentUser } = useAuth();
     const { showToast } = useToast();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const chatMode = searchParams.get('mode') as 'video' | 'text' || 'video';
+    const chatScope = searchParams.get('scope') as 'campus' | 'global' || 'campus';
+
+    // Unique session ID for this tab to allow matching with self/multiple tabs
+    const [sessionId] = useState(() => `sess_${Math.random().toString(36).substr(2, 9)}`);
 
     const [isSearching, setIsSearching] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
@@ -33,8 +40,43 @@ export const Discover: React.FC = () => {
 
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
+    const [hasLiked, setHasLiked] = useState(false);
+    const [partnerId, setPartnerId] = useState<string | null>(null);
+    const [matchReveal, setMatchReveal] = useState<{ myName: string, partnerName: string } | null>(null);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const channelRef = useRef<any>(null); // Supabase broadcast channel
+
+    // Refs to avoid stale closures in broadcast handlers
+    const isSearchingRef = useRef(isSearching);
+    const isConnectedRef = useRef(isConnected);
+    const isConnectingRef = useRef(false);
+    const socketRef = useRef<Socket | null>(null);
+    const activeChannelNameRef = useRef<string | null>(null);
+
+    useEffect(() => { isSearchingRef.current = isSearching; }, [isSearching]);
+    useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+
+    // Re-sync lobby when currentUser becomes available
+    useEffect(() => {
+        if (currentUser?.id && socketRef.current?.connected && isSearchingRef.current) {
+            console.log('[Matchmaking] Re-syncing lobby with userId:', currentUser.id);
+            socketRef.current.emit('join_lobby', {
+                scope: chatScope,
+                mode: chatMode,
+                sessionId,
+                userId: currentUser.id
+            });
+        }
+    }, [currentUser, chatMode, chatScope, sessionId]);
+
+    // Auto-start discovery based on mode when page loads
+    useEffect(() => {
+        startSearch(chatMode, chatScope);
+        return () => {
+            stopConnection();
+        };
+    }, [chatMode, chatScope]);
 
     useEffect(() => {
         scrollToBottom();
@@ -44,36 +86,137 @@ export const Discover: React.FC = () => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    const startSearch = async () => {
+    const startSearch = async (mode: 'video' | 'text', scope: 'campus' | 'global') => {
         setIsSearching(true);
-        setMessages([{ sender: 'System', text: 'Looking for someone special...' }]);
+        setIsConnected(false);
+        setMessages([{ sender: 'System', text: `Searching for a ${scope === 'campus' ? 'campus student' : 'stranger'} for ${mode === 'video' ? 'video' : 'text'} chat...` }]);
 
-        // Simulate matchmaking delay
-        setTimeout(async () => {
-            await connectToStranger();
-        }, 2000);
+        if (!supabase) {
+            setMessages(prev => [...prev, { sender: 'System', text: 'Error: Database connection missing.' }]);
+            return;
+        }
+
+        // Matchmaking via Socket.io (More reliable than Supabase Broadcast for local dev)
+        const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+        socketRef.current = socket;
+
+        socket.on('connect', () => {
+            console.log('[Matchmaking] Connected to Socket.io');
+            if (currentUser?.id) {
+                console.log('[Matchmaking] Joining lobby with userId:', currentUser.id);
+                socket.emit('join_lobby', { scope, mode, sessionId, userId: currentUser.id });
+            } else {
+                console.warn('[Matchmaking] No currentUser available at connect, waiting...');
+            }
+        });
+
+        socket.on('match_found', ({ peerId, peerUserId, channelName, initiator }) => {
+            console.log('[Matchmaking] Match found!', { peerId, peerUserId, channelName, initiator });
+            activeChannelNameRef.current = channelName;
+            setPartnerId(peerUserId);
+            connectToStranger(mode, channelName);
+        });
+
+        socket.on('receive_message', ({ text, sender }) => {
+            console.log('[Chat] Received message:', text, 'from:', sender);
+            setMessages(prev => [...prev, { sender: 'Stranger', text }]);
+        });
+
+        socket.on('match_reveal', ({ users }) => {
+            console.log('[Matchmaking] Mutual match! Revealing names:', users);
+            const me = users.find((u: any) => u.id === currentUser?.id);
+            const partner = users.find((u: any) => u.id !== currentUser?.id);
+            if (me && partner) {
+                setMatchReveal({ myName: me.name, partnerName: partner.name });
+                showToast(`It's a Match! You are now connected with ${partner.name}`, 'success');
+            }
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('[Matchmaking] Socket.io connection error:', err);
+            // Fallback to Supabase if socket fails
+            setupSupabaseFallback(scope, mode);
+        });
     };
 
-    const connectToStranger = async () => {
+    const setupSupabaseFallback = (scope: string, mode: string) => {
+        console.log('[Matchmaking] Attempting Supabase Broadcast fallback...');
+        const lobbyName = `discover_lobby_${scope}_${mode}`;
+        const channel = supabase!.channel(lobbyName);
+        channelRef.current = channel;
+
+        channel
+            .on('broadcast', { event: 'match_searching' }, ({ payload }) => {
+                if (payload.sessionId !== sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
+                    if (sessionId < payload.sessionId) {
+                        const sortedIds = [sessionId, payload.sessionId].sort();
+                        channel.send({
+                            type: 'broadcast',
+                            event: 'match_request',
+                            payload: {
+                                fromSessionId: sessionId,
+                                toSessionId: payload.sessionId,
+                                channelName: `discover_room_${sortedIds[0]}_${sortedIds[1]}`
+                            }
+                        });
+                    }
+                }
+            })
+            .on('broadcast', { event: 'match_request' }, ({ payload }) => {
+                if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
+                    channel.send({
+                        type: 'broadcast',
+                        event: 'match_accept',
+                        payload: { sessionId, toSessionId: payload.fromSessionId, channelName: payload.channelName }
+                    });
+                    connectToStranger(mode as any, payload.channelName);
+                }
+            })
+            .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
+                if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
+                    connectToStranger(mode as any, payload.channelName);
+                }
+            })
+            .subscribe(async (status) => {
+                console.log('[Matchmaking] Supabase Fallback Status:', status);
+                if (status === 'SUBSCRIBED') {
+                    const interval = setInterval(() => {
+                        if (isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
+                            channel.send({ type: 'broadcast', event: 'match_searching', payload: { sessionId } });
+                        } else {
+                            clearInterval(interval);
+                        }
+                    }, 2000);
+                }
+            });
+    };
+
+    const connectToStranger = async (mode: 'video' | 'text', channelName: string) => {
+        if (isConnectedRef.current || isConnectingRef.current) {
+            console.log('[Matchmaking] Already connected or connecting, ignoring duplicate request');
+            return;
+        }
+
         try {
-            // In a real app, you'd fetch a token/channel from your server
-            // For this demo, we'll use a random channel or the user ID
-            const mockChannel = `discover_${Math.floor(Math.random() * 1000)}`;
-
-            // Initialize Agora
-            await initAgora(mockChannel);
-
-            setIsSearching(false);
+            console.log('[Matchmaking] Transitioning to connected state for channel:', channelName);
+            isConnectingRef.current = true;
             setIsConnected(true);
+            setIsSearching(false);
+
+            await initAgora(channelName, mode);
+
+            isConnectingRef.current = false;
             setMessages(prev => [...prev, { sender: 'System', text: 'You are now chatting with a stranger. Say hi!' }]);
         } catch (err) {
-            console.error('Matchmaking failed:', err);
+            console.error('[Matchmaking] Connection failed:', err);
+            isConnectingRef.current = false;
+            setIsConnected(false);
             showToast('Connection failed. Try again.', 'error');
-            setIsSearching(false);
+            handleNext();
         }
     };
 
-    const initAgora = async (channelName: string) => {
+    const initAgora = async (channelName: string, mode: 'video' | 'text') => {
         const appId = import.meta.env.VITE_AGORA_APP_ID || ''; // Should be in .env
         if (!appId) {
             showToast('Agora App ID missing. Check .env', 'error');
@@ -83,9 +226,12 @@ export const Discover: React.FC = () => {
         try {
             client.on('user-published', async (user, mediaType) => {
                 await client.subscribe(user, mediaType);
-                if (mediaType === 'video') {
+                if (mediaType === 'video' && mode === 'video') {
                     setRemoteUser(user);
-                    user.videoTrack?.play('remote-video-discover');
+                    // Add a small delay for DOM to be ready
+                    setTimeout(() => {
+                        user.videoTrack?.play('remote-video-discover');
+                    }, 500);
                 }
                 if (mediaType === 'audio') {
                     user.audioTrack?.play();
@@ -97,54 +243,117 @@ export const Discover: React.FC = () => {
                 handleNext();
             });
 
-            // Join with a null token for now (if security is disabled in Agora console)
-            // Note: Real apps need a token from server
-            // await client.join(appId, channelName, null, null);
+            // Handle token fetching
+            let token: string | null = null;
+            let finalAppId = appId;
 
-            const [audio, video] = await AgoraRTC.createMicrophoneAndCameraTracks();
-            setLocalAudioTrack(audio);
-            setLocalVideoTrack(video);
+            try {
+                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/agora-token`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channelName })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    token = data.token;
+                    if (data.appId) finalAppId = data.appId;
+                }
+            } catch (err) {
+                console.warn('Failed to fetch token, joining with null token:', err);
+            }
 
-            // await client.publish([audio, video]);
-            video.play('local-video-discover');
+            // Join Agora channel
+            await client.join(finalAppId, channelName, token, null);
+
+            if (mode === 'video') {
+                const [audio, video] = await AgoraRTC.createMicrophoneAndCameraTracks();
+                setLocalAudioTrack(audio);
+                setLocalVideoTrack(video);
+                await client.publish([audio, video]);
+                video.play('local-video-discover');
+            }
         } catch (err) {
             console.error('Agora init error:', err);
-            throw err;
         }
     };
 
     const handleNext = () => {
         stopConnection();
-        startSearch();
+        // Short delay to ensure cleanup before restart
+        setTimeout(() => startSearch(chatMode, chatScope), 500);
     };
 
     const stopConnection = () => {
         localAudioTrack?.close();
         localVideoTrack?.close();
         client.leave();
+
+        if (socketRef.current) {
+            socketRef.current.disconnect();
+            socketRef.current = null;
+        }
+
+        if (channelRef.current) {
+            supabase?.removeChannel(channelRef.current);
+            channelRef.current = null;
+        }
         setRemoteUser(null);
         setIsConnected(false);
         setIsSearching(false);
+        setPartnerId(null);
+        setHasLiked(false);
+        setMatchReveal(null);
         setMessages([]);
     };
 
+    const handleLike = async () => {
+        if (!currentUser || !partnerId || hasLiked) return;
+
+        try {
+            console.log(`[Like] Sending like from ${currentUser.id} to ${partnerId} in room ${activeChannelNameRef.current}`);
+            setHasLiked(true);
+            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/accept-match`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    myId: currentUser.id,
+                    targetId: partnerId,
+                    room: activeChannelNameRef.current
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Failed to like');
+            }
+            showToast('Liked! If they like back, it\'s a match!', 'success');
+        } catch (err: any) {
+            console.error('[Like] Error details:', err);
+            setHasLiked(false);
+            showToast(err.message || 'Failed to send like', 'error');
+        }
+    };
+
+    const handleExit = () => {
+        stopConnection();
+        navigate('/discover');
+    };
+
     const sendMessage = () => {
-        if (!inputText.trim()) return;
-        setMessages(prev => [...prev, { sender: 'You', text: inputText }]);
+        if (!inputText.trim() || !activeChannelNameRef.current) return;
+
+        const messageText = inputText.trim();
+        setMessages(prev => [...prev, { sender: 'You', text: messageText }]);
         setInputText('');
 
-        // Auto-reply for "stranger" effect in demo
-        setTimeout(() => {
-            const replies = [
-                "Hey! What's up?",
-                "Nice to meet you!",
-                "What uniroversity are you from?",
-                "Cool neon theme right?",
-                "Haha that's funny.",
-                "I'm just chilling, you?"
-            ];
-            setMessages(prev => [...prev, { sender: 'Stranger', text: replies[Math.floor(Math.random() * replies.length)] }]);
-        }, 1000);
+        // Send to peer via Socket.io
+        if (socketRef.current) {
+            socketRef.current.emit('send_message', {
+                room: activeChannelNameRef.current,
+                text: messageText,
+                sender: sessionId
+            });
+        }
     };
 
     const toggleMute = () => {
@@ -165,7 +374,7 @@ export const Discover: React.FC = () => {
         <div className="h-full w-full bg-black flex flex-col md:flex-row overflow-hidden text-white font-sans">
 
             {/* Video Section */}
-            <div className="flex-[3] relative bg-gray-900/50 flex flex-col p-4 gap-4">
+            <div className={`flex-[3] relative bg-gray-900/50 flex flex-col p-4 gap-4 transition-all duration-500 ${chatMode === 'text' ? 'hidden md:flex opacity-20 pointer-events-none grayscale' : ''}`}>
 
                 {/* Remote Video (Stranger) */}
                 <div className="flex-1 relative rounded-3xl overflow-hidden border-2 border-white/5 bg-black shadow-2xl min-h-[300px]">
@@ -177,29 +386,25 @@ export const Discover: React.FC = () => {
                                 <div className="space-y-6">
                                     <div className="relative">
                                         <div className="w-24 h-24 rounded-full border-4 border-neon/20 border-t-neon animate-spin shadow-[0_0_30px_rgba(255,0,127,0.3)]"></div>
-                                        <Ghost className="w-10 h-10 text-neon absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+                                        <Shuffle className="w-10 h-10 text-neon absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
                                     </div>
                                     <div>
                                         <h2 className="text-2xl font-black text-white uppercase tracking-tighter mb-2">Searching...</h2>
                                         <p className="text-gray-400 text-sm">Finding someone new from campus</p>
                                     </div>
+                                    <button
+                                        onClick={handleExit}
+                                        className="text-xs font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-[0.2em]"
+                                    >
+                                        Cancel & Exit
+                                    </button>
                                 </div>
                             ) : (
-                                <div className="space-y-6 max-w-sm">
-                                    <div className="w-20 h-20 bg-neon/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-neon/30 shadow-[0_0_20px_rgba(255,0,127,0.2)] animate-pulse">
-                                        <Shuffle className="w-10 h-10 text-neon" />
+                                <div className="space-y-4">
+                                    <div className="w-16 h-16 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-2">
+                                        <VideoOff className="text-gray-600" />
                                     </div>
-                                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Ready to meet?</h2>
-                                    <p className="text-gray-400 text-sm leading-relaxed">
-                                        Click start to begin a random video chat with another student.
-                                        Stay safe and have fun!
-                                    </p>
-                                    <button
-                                        onClick={startSearch}
-                                        className="w-full py-4 bg-neon text-white font-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-[0_0_40px_rgba(255,0,127,0.5)] uppercase tracking-widest text-lg"
-                                    >
-                                        Start Discovery
-                                    </button>
+                                    <p className="text-gray-500 text-sm font-bold uppercase tracking-widest">Waiting for partner...</p>
                                 </div>
                             )}
                         </div>
@@ -216,10 +421,10 @@ export const Discover: React.FC = () => {
 
                 {/* Local Video (Self) */}
                 <div className="h-1/3 md:h-1/2 relative rounded-3xl overflow-hidden border-2 border-neon/30 bg-black shadow-2xl group">
-                    <div id="local-video-discover" className="w-full h-full object-cover transform scale-X-[-1]" />
+                    <div id="local-video-discover" className="w-full h-full object-cover transform scale-x-[-1]" />
 
                     {/* Self Controls Overlay */}
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-20 opacity-100 transition-opacity">
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-20">
                         <button
                             onClick={toggleMute}
                             className={`p-3 rounded-full backdrop-blur-md transition-all ${isMuted ? 'bg-red-500 text-white' : 'bg-black/40 text-white hover:bg-neon'}`}
@@ -251,9 +456,22 @@ export const Discover: React.FC = () => {
                             <SkipForward className="group-hover:translate-x-1 transition-transform" />
                             Next Stranger
                         </button>
+
+                        <button
+                            onClick={handleLike}
+                            disabled={hasLiked}
+                            className={`px-6 py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold ${hasLiked
+                                ? 'bg-red-500 text-white border-red-500'
+                                : 'bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white'
+                                }`}
+                        >
+                            <Heart className={hasLiked ? 'fill-current' : ''} size={20} />
+                            {hasLiked ? 'Liked' : 'Like'}
+                        </button>
+
                         <button
                             onClick={stopConnection}
-                            className="px-6 py-4 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white font-bold rounded-2xl transition-all border border-red-500/30"
+                            className="px-6 py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30"
                         >
                             Stop
                         </button>
@@ -324,7 +542,75 @@ export const Discover: React.FC = () => {
                 </div>
             </div>
 
-        </div>
+            {/* Match Reveal Overlay */}
+            {matchReveal && (
+                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl animate-in fade-in duration-500">
+                    <style>
+                        {`
+                        @keyframes float-up {
+                            0% { transform: translateY(100vh) rotate(0deg); opacity: 1; }
+                            100% { transform: translateY(-100px) rotate(360deg); opacity: 0; }
+                        }
+                        .animate-float-up {
+                            animation: float-up 4s ease-out forwards;
+                        }
+                        `}
+                    </style>
+                    <div className="relative text-center p-8 max-w-lg w-full transform animate-in zoom-in-95 duration-700">
+                        {/* Celebration Particles */}
+                        <div className="absolute inset-0 overflow-hidden pointer-events-none h-screen w-screen -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2">
+                            {[...Array(30)].map((_, i) => (
+                                <div
+                                    key={i}
+                                    className="absolute animate-float-up"
+                                    style={{
+                                        left: `${Math.random() * 100}%`,
+                                        bottom: `-50px`,
+                                        animationDelay: `${Math.random() * 3}s`,
+                                        color: i % 2 === 0 ? '#FF007F' : '#00F3FF'
+                                    }}
+                                >
+                                    <Heart size={Math.random() * 30 + 10} fill="currentColor" />
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="relative z-10">
+                            <Sparkles className="w-24 h-24 text-neon mx-auto mb-6 animate-bounce drop-shadow-[0_0_30px_rgba(255,0,127,0.8)]" />
+
+                            <h2 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon to-blue-400 uppercase tracking-tighter mb-8 italic leading-none">
+                                It's a Match!
+                            </h2>
+
+                            <div className="flex items-center justify-center gap-8 mb-12">
+                                <div className="text-right">
+                                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">You</p>
+                                    <p className="text-3xl font-black text-white">{matchReveal.myName}</p>
+                                </div>
+                                <div className="h-16 w-[1px] bg-gradient-to-b from-transparent via-white/40 to-transparent"></div>
+                                <div className="text-left">
+                                    <p className="text-[10px] font-bold text-neon uppercase tracking-widest mb-1">Matched With</p>
+                                    <p className="text-3xl font-black text-white">{matchReveal.partnerName}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <button
+                                    onClick={() => setMatchReveal(null)}
+                                    className="w-full py-5 bg-neon text-white font-black rounded-2xl shadow-[0_0_50px_rgba(255,0,127,0.5)] hover:scale-105 active:scale-95 transition-all text-sm uppercase tracking-[0.2em]"
+                                >
+                                    Keep Chatting
+                                </button>
+                                <p className="text-gray-400 text-[10px] font-bold uppercase tracking-[0.3em] animate-pulse">
+                                    Connection Secured • Names Revealed
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+        </div >
     );
 };
 
