@@ -545,17 +545,6 @@ export const Discover: React.FC = () => {
             {/* Match Reveal Overlay */}
             {matchReveal && (
                 <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl animate-in fade-in duration-500">
-                    <style>
-                        {`
-                        @keyframes float-up {
-                            0% { transform: translateY(100vh) rotate(0deg); opacity: 1; }
-                            100% { transform: translateY(-100px) rotate(360deg); opacity: 0; }
-                        }
-                        .animate-float-up {
-                            animation: float-up 4s ease-out forwards;
-                        }
-                        `}
-                    </style>
                     <div className="relative text-center p-8 max-w-lg w-full transform animate-in zoom-in-95 duration-700">
                         {/* Celebration Particles */}
                         <div className="absolute inset-0 overflow-hidden pointer-events-none h-screen w-screen -translate-x-1/2 -translate-y-1/2 left-1/2 top-1/2">
