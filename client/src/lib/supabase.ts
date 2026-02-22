@@ -8,5 +8,11 @@ if (!supabaseUrl || !supabaseKey) {
   console.error('CRITICAL: Missing Supabase environment variables. Check your Vercel Project Settings.');
 }
 
-// Create the Supabase client (will be null/broken if env vars missing, but won't crash entire app bundle)
-export const supabase = createClient(supabaseUrl || '', supabaseKey || '');
+// Create the Supabase client safely
+export const supabase = (supabaseUrl && supabaseKey)
+  ? createClient(supabaseUrl, supabaseKey)
+  : null;
+
+if (!supabase) {
+  console.warn('Supabase client not initialized: Missing environment variables.');
+}

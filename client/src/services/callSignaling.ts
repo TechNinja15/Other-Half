@@ -64,6 +64,11 @@ export const initiateCall = async (
 
         const { token, channelName, appId } = await response.json();
 
+        if (!supabase) {
+            console.error('[CallSignaling] Supabase not initialized');
+            return null;
+        }
+
         // 3. Create Call Session in Supabase
         const { data: session, error } = await supabase
             .from('call_sessions')
