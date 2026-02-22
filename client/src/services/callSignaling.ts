@@ -134,7 +134,7 @@ export const sendCallSignal = async (receiverId: string, payload: any) => {
     channel.subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
             await channel.send({ type: 'broadcast', event: 'incoming_call_signal', payload: payload });
-            supabase.removeChannel(channel);
+            supabase?.removeChannel(channel);
         }
     });
 };
@@ -198,5 +198,5 @@ export const subscribeToIncomingCalls = (userId: string, onIncomingCall: (call: 
             }
         })
         .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase?.removeChannel(channel); };
 };

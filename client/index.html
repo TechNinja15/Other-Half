@@ -4,32 +4,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  
+
   <!-- Primary SEO Meta Tags -->
   <title>OthrHalff – Campus Dating & College Connections | Find Your Other Half</title>
-  <meta name="description" content="OthrHalff is India's exclusive campus dating and connection platform for university students. Find study partners, gym buddies, or your perfect match—anonymously and safely. Join your college community today." />
-  <meta name="keywords" content="campus dating app, college dating India, university dating, anonymous dating app, college connections, student dating, campus matchmaking, find study partner, college relationships, university students India, OthrHalff, campus crush, college social app" />
+  <meta name="description"
+    content="OthrHalff is India's exclusive campus dating and connection platform for university students. Find study partners, gym buddies, or your perfect match—anonymously and safely. Join your college community today." />
+  <meta name="keywords"
+    content="campus dating app, college dating India, university dating, anonymous dating app, college connections, student dating, campus matchmaking, find study partner, college relationships, university students India, OthrHalff, campus crush, college social app" />
   <meta name="author" content="OthrHalff Team" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://www.othrhalff.in" />
-  
+
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="OthrHalff" />
   <meta property="og:title" content="OthrHalff – Campus Dating & College Connections" />
-  <meta property="og:description" content="India's exclusive campus dating platform. Find study partners, gym buddies, or your perfect match—anonymously and safely on your university campus." />
+  <meta property="og:description"
+    content="India's exclusive campus dating platform. Find study partners, gym buddies, or your perfect match—anonymously and safely on your university campus." />
   <meta property="og:image" content="https://www.othrhalff.in/og-image.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="https://www.othrhalff.in" />
   <meta property="og:locale" content="en_IN" />
-  
+
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="OthrHalff – Campus Dating & College Connections" />
-  <meta name="twitter:description" content="India's exclusive campus dating platform. Find study partners, gym buddies, or your perfect match—anonymously and safely." />
+  <meta name="twitter:description"
+    content="India's exclusive campus dating platform. Find study partners, gym buddies, or your perfect match—anonymously and safely." />
   <meta name="twitter:image" content="https://www.othrhalff.in/og-image.png" />
-  
+
   <!-- Structured Data (JSON-LD) -->
   <script type="application/ld+json">
   {
@@ -52,7 +56,7 @@
     }
   }
   </script>
-  
+
   <!-- PWA / Mobile -->
   <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="apple-touch-icon" href="/favicon.png" />
@@ -62,25 +66,47 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="OthrHalff" />
-  
+
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
-  
+
   <!-- Google Analytics -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-1SMGFPR49Z"></script>
   <script>
     window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
+    function gtag() { dataLayer.push(arguments); }
     gtag('js', new Date());
     gtag('config', 'G-1SMGFPR49Z');
+  </script>
+
+  <script>
+    // Fail-safe error reporting - registered before any modules load
+    window.onerror = function (message, source, lineno, colno, error) {
+      const root = document.getElementById('root');
+      if (root) {
+        root.innerHTML = `
+          <div style="background: #1a0000; color: #ff4d4d; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: monospace; padding: 20px; text-align: center; border: 4px solid #ff007f;">
+            <h1 style="margin-bottom: 20px; font-size: 24px;">🚀 CRITICAL LAUNCH ERROR</h1>
+            <div style="background: #000; padding: 20px; border-radius: 8px; max-width: 100%; overflow: auto; border: 1px solid #ff007f; color: #fff; text-align: left; font-size: 14px;">
+              <strong>Error:</strong> ${message}<br>
+              <strong>Source:</strong> ${source}:${lineno}:${colno}
+            </div>
+            <p style="margin-top: 20px; color: #888;">Check Browser Console (F12) for a full trace.</p>
+            <button onclick="window.location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #ff007f; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Retry Page Load</button>
+          </div>
+        `;
+      }
+    };
+    window.onunhandledrejection = (event) => window.onerror(event.reason, 'promise', 0, 0, event.reason);
   </script>
 </head>
 
 <body>
   <div id="root">
-    <div style="background: black; color: #ff007f; height: 100vh; display: flex; align-items: center; justify-content: center; font-family: sans-serif; font-weight: bold; font-size: 24px;">
+    <div
+      style="background: black; color: #ff007f; height: 100vh; display: flex; align-items: center; justify-content: center; font-family: sans-serif; font-weight: bold; font-size: 24px;">
       LOADING...
     </div>
   </div>
