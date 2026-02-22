@@ -1,0 +1,21 @@
+{
+    "builds": [
+        {
+            "src": "client/package.json",
+            "use": "@vercel/static-build",
+            "config": {
+                "distDir": "dist"
+            }
+        }
+    ],
+    "rewrites": [
+        {
+            "source": "/api/(.*)",
+            "destination": "https://testing-of.onrender.com/api/$1"
+        },
+        {
+            "source": "/((?!.+\\.[\\w]+$|api/).*)",
+            "destination": "/index.html"
+        }
+    ]
+}
