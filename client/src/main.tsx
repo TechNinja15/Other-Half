@@ -10,11 +10,29 @@ import { NotificationProvider } from './context/NotificationContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
+// Global Error Logging for Production Debugging
+window.onerror = (message, source, lineno, colno, error) => {
+  console.error('GLOBAL ERROR:', { message, source, lineno, colno, error });
+  // You could also send this to a service like Sentry
+};
+
+window.onunhandledrejection = (event) => {
+  console.error('UNHANDLED REJECTION:', event.reason);
+};
+
+console.log('App starting...', {
+  env: import.meta.env.MODE,
+  apiUrl: import.meta.env.VITE_API_URL,
+  supabaseUrl: !!import.meta.env.VITE_SUPABASE_URL
+});
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
+  console.error("CRITICAL: Could not find root element to mount to");
   throw new Error("Could not find root element to mount to");
 }
 
+console.log('Mounting React root...');
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
@@ -35,6 +53,8 @@ root.render(
     </ErrorBoundary>
   </React.StrictMode>
 );
+
+console.log('React root rendered successfully');
 
 // Register Service Worker for PWA support (production only)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
