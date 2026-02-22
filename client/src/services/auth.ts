@@ -132,10 +132,17 @@ export const authService = {
   signInWithGoogle: async () => {
     if (!supabase) throw new Error('Supabase client not initialized');
 
+    const redirectTo = `${window.location.origin}/onboarding`;
+
+    // Log for debugging (helps identify origin issues on localhost)
+    if (import.meta.env.DEV) {
+      console.log('[Auth] Google Sign-In RedirectTo:', redirectTo);
+    }
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/onboarding`,
+        redirectTo,
       }
     });
 
@@ -146,10 +153,16 @@ export const authService = {
   signInWithMagicLink: async (email: string) => {
     if (!supabase) throw new Error('Supabase client not initialized');
 
+    const emailRedirectTo = `${window.location.origin}/onboarding`;
+
+    if (import.meta.env.DEV) {
+      console.log('[Auth] Magic Link RedirectTo:', emailRedirectTo);
+    }
+
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/onboarding`,
+        emailRedirectTo,
       }
     });
 
