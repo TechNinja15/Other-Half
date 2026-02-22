@@ -124,11 +124,15 @@ export const Discover: React.FC = () => {
 
         socket.on('match_reveal', ({ users }) => {
             console.log('[Matchmaking] Mutual match! Revealing names:', users);
-            const me = users.find((u: any) => u.id === currentUser?.id);
-            const partner = users.find((u: any) => u.id !== currentUser?.id);
+
+            // In testing, myId might equal partnerId. 
+            // We search for partner preferentially as anyone NOT me.
+            const partner = users.find((u: any) => u.id !== currentUser?.id) || users[0];
+            const me = users.find((u: any) => u.id === currentUser?.id) || users[1];
+
             if (me && partner) {
                 setMatchReveal({ myName: me.name, partnerName: partner.name });
-                showToast(`It's a Match! You are now connected with ${partner.name}`, 'success');
+                showToast(`It's a Match! Names revealed: ${me.name} & ${partner.name}`, 'success');
             }
         });
 
@@ -199,6 +203,7 @@ export const Discover: React.FC = () => {
 
         try {
             console.log('[Matchmaking] Transitioning to connected state for channel:', channelName);
+            activeChannelNameRef.current = channelName;
             isConnectingRef.current = true;
             setIsConnected(true);
             setIsSearching(false);
