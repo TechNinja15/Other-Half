@@ -10,45 +10,31 @@ import { NotificationProvider } from './context/NotificationContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
-console.log('App starting...', {
-  env: import.meta.env.MODE,
-  apiUrl: import.meta.env.VITE_API_URL,
-  supabaseUrl: !!import.meta.env.VITE_SUPABASE_URL
-});
-
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  console.error("CRITICAL: Could not find root element to mount to");
   throw new Error("Could not find root element to mount to");
 }
 
-try {
-  console.log('Mounting React root...');
-  const root = ReactDOM.createRoot(rootElement!);
-  root.render(
-    <React.StrictMode>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <AuthProvider>
-            <PresenceProvider>
-              <CallProvider>
-                <ToastProvider>
-                  <NotificationProvider>
-                    <App />
-                  </NotificationProvider>
-                </ToastProvider>
-              </CallProvider>
-            </PresenceProvider>
-          </AuthProvider>
-        </BrowserRouter>
-      </ErrorBoundary>
-    </React.StrictMode>
-  );
-
-  console.log('React root rendered successfully');
-} catch (err) {
-  console.error('Mounting failed:', err);
-}
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <PresenceProvider>
+            <CallProvider>
+              <ToastProvider>
+                <NotificationProvider>
+                  <App />
+                </NotificationProvider>
+              </ToastProvider>
+            </CallProvider>
+          </PresenceProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
+  </React.StrictMode>
+);
 
 // Register Service Worker for PWA support (production only)
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
