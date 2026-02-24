@@ -64,11 +64,6 @@ export const initiateCall = async (
 
         const { token, channelName, appId } = await response.json();
 
-        if (!supabase) {
-            console.error('[CallSignaling] Supabase not initialized');
-            return null;
-        }
-
         // 3. Create Call Session in Supabase
         const { data: session, error } = await supabase
             .from('call_sessions')
@@ -134,7 +129,7 @@ export const sendCallSignal = async (receiverId: string, payload: any) => {
     channel.subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
             await channel.send({ type: 'broadcast', event: 'incoming_call_signal', payload: payload });
-            supabase?.removeChannel(channel);
+            supabase.removeChannel(channel);
         }
     });
 };
@@ -198,5 +193,5 @@ export const subscribeToIncomingCalls = (userId: string, onIncomingCall: (call: 
             }
         })
         .subscribe();
-    return () => { supabase?.removeChannel(channel); };
+    return () => { supabase.removeChannel(channel); };
 };
