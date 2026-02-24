@@ -1,9 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import AgoraRTC, {
-    IAgoraRTCRemoteUser,
-    ICameraVideoTrack,
-    IMicrophoneAudioTrack
-} from 'agora-rtc-sdk-ng';
 import {
     X, Mic, MicOff, Video as VideoIcon, VideoOff,
     PhoneOff, Sparkles, Send, SkipForward, Hand,
@@ -32,17 +27,17 @@ export const Discover: React.FC = () => {
     const [messages, setMessages] = useState<{ sender: string, text: string }[]>([]);
     const [inputText, setInputText] = useState('');
 
-    // Agora State
-    const [localVideoTrack, setLocalVideoTrack] = useState<ICameraVideoTrack | null>(null);
-    const [localAudioTrack, setLocalAudioTrack] = useState<IMicrophoneAudioTrack | null>(null);
-    const [remoteUser, setRemoteUser] = useState<IAgoraRTCRemoteUser | null>(null);
-    const [client] = useState(() => AgoraRTC.createClient({ mode: 'rtc', codec: 'h264' }));
+    // WebRTC State
+    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const pcRef = useRef<RTCPeerConnection | null>(null);
 
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [hasLiked, setHasLiked] = useState(false);
     const [partnerId, setPartnerId] = useState<string | null>(null);
     const [matchReveal, setMatchReveal] = useState<{ myName: string, partnerName: string } | null>(null);
+    const [showMatchReveal, setShowMatchReveal] = useState(false);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const channelRef = useRef<any>(null); // Supabase broadcast channel
@@ -114,7 +109,7 @@ export const Discover: React.FC = () => {
             console.log('[Matchmaking] Match found!', { peerId, peerUserId, channelName, initiator });
             activeChannelNameRef.current = channelName;
             setPartnerId(peerUserId);
-            connectToStranger(mode, channelName);
+            connectToStranger(mode, channelName, initiator);
         });
 
         socket.on('receive_message', ({ text, sender }) => {
@@ -132,6 +127,7 @@ export const Discover: React.FC = () => {
 
             if (me && partner) {
                 setMatchReveal({ myName: me.name, partnerName: partner.name });
+                setShowMatchReveal(true);
                 showToast(`It's a Match! Names revealed: ${me.name} & ${partner.name}`, 'success');
             }
         });
@@ -173,12 +169,12 @@ export const Discover: React.FC = () => {
                         event: 'match_accept',
                         payload: { sessionId, toSessionId: payload.fromSessionId, channelName: payload.channelName }
                     });
-                    connectToStranger(mode as any, payload.channelName);
+                    connectToStranger(mode as any, payload.channelName, false);
                 }
             })
             .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
                 if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
-                    connectToStranger(mode as any, payload.channelName);
+                    connectToStranger(mode as any, payload.channelName, true);
                 }
             })
             .subscribe(async (status) => {
@@ -195,7 +191,7 @@ export const Discover: React.FC = () => {
             });
     };
 
-    const connectToStranger = async (mode: 'video' | 'text', channelName: string) => {
+    const connectToStranger = async (mode: 'video' | 'text', channelName: string, initiator: boolean) => {
         if (isConnectedRef.current || isConnectingRef.current) {
             console.log('[Matchmaking] Already connected or connecting, ignoring duplicate request');
             return;
@@ -208,7 +204,7 @@ export const Discover: React.FC = () => {
             setIsConnected(true);
             setIsSearching(false);
 
-            await initAgora(channelName, mode);
+            await initWebRTC(channelName, mode, initiator);
 
             isConnectingRef.current = false;
             setMessages(prev => [...prev, { sender: 'System', text: 'You are now chatting with a stranger. Say hi!' }]);
@@ -221,64 +217,76 @@ export const Discover: React.FC = () => {
         }
     };
 
-    const initAgora = async (channelName: string, mode: 'video' | 'text') => {
-        const appId = import.meta.env.VITE_AGORA_APP_ID || ''; // Should be in .env
-        if (!appId) {
-            showToast('Agora App ID missing. Check .env', 'error');
-            // return;
+    const initWebRTC = async (channelName: string, mode: 'video' | 'text', initiator: boolean) => {
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        const pc = new RTCPeerConnection(configuration);
+        pcRef.current = pc;
+
+        // Handle incoming tracks
+        pc.ontrack = (event) => {
+            console.log('[WebRTC] Received remote track');
+            setRemoteStream(event.streams[0]);
+            const remoteVideo = document.getElementById('remote-video-discover') as HTMLVideoElement;
+            if (remoteVideo) {
+                remoteVideo.srcObject = event.streams[0];
+            }
+        };
+
+        // Handle ICE candidates
+        pc.onicecandidate = (event) => {
+            if (event.candidate && socketRef.current) {
+                socketRef.current.emit('webrtc_signal', {
+                    room: channelName,
+                    signal: { type: 'candidate', candidate: event.candidate }
+                });
+            }
+        };
+
+        // Setup Signaling listener
+        if (socketRef.current) {
+            socketRef.current.on('webrtc_signal', async ({ signal }) => {
+                if (!pcRef.current) return;
+
+                if (signal.type === 'offer') {
+                    await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+                    const answer = await pcRef.current.createAnswer();
+                    await pcRef.current.setLocalDescription(answer);
+                    socketRef.current?.emit('webrtc_signal', { room: channelName, signal: answer });
+                } else if (signal.type === 'answer') {
+                    await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+                } else if (signal.type === 'candidate') {
+                    await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                }
+            });
         }
 
-        try {
-            client.on('user-published', async (user, mediaType) => {
-                await client.subscribe(user, mediaType);
-                if (mediaType === 'video' && mode === 'video') {
-                    setRemoteUser(user);
-                    // Add a small delay for DOM to be ready
-                    setTimeout(() => {
-                        user.videoTrack?.play('remote-video-discover');
-                    }, 500);
-                }
-                if (mediaType === 'audio') {
-                    user.audioTrack?.play();
-                }
-            });
-
-            client.on('user-left', () => {
-                setRemoteUser(null);
-                handleNext();
-            });
-
-            // Handle token fetching
-            let token: string | null = null;
-            let finalAppId = appId;
-
+        // Add local tracks
+        if (mode === 'video') {
             try {
-                const response = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/agora-token`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ channelName })
-                });
-                if (response.ok) {
-                    const data = await response.json();
-                    token = data.token;
-                    if (data.appId) finalAppId = data.appId;
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                setLocalStream(stream);
+                stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+                const localVideo = document.getElementById('local-video-discover') as HTMLVideoElement;
+                if (localVideo) {
+                    localVideo.srcObject = stream;
                 }
             } catch (err) {
-                console.warn('Failed to fetch token, joining with null token:', err);
+                console.error('Error accessing media devices:', err);
+                showToast('Could not access camera/mic', 'error');
             }
+        }
 
-            // Join Agora channel
-            await client.join(finalAppId, channelName, token, null);
-
-            if (mode === 'video') {
-                const [audio, video] = await AgoraRTC.createMicrophoneAndCameraTracks();
-                setLocalAudioTrack(audio);
-                setLocalVideoTrack(video);
-                await client.publish([audio, video]);
-                video.play('local-video-discover');
-            }
-        } catch (err) {
-            console.error('Agora init error:', err);
+        if (initiator) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socketRef.current?.emit('webrtc_signal', { room: channelName, signal: offer });
         }
     };
 
@@ -289,11 +297,17 @@ export const Discover: React.FC = () => {
     };
 
     const stopConnection = () => {
-        localAudioTrack?.close();
-        localVideoTrack?.close();
-        client.leave();
+        localStream?.getTracks().forEach(track => track.stop());
+        setLocalStream(null);
+        setRemoteStream(null);
+
+        if (pcRef.current) {
+            pcRef.current.close();
+            pcRef.current = null;
+        }
 
         if (socketRef.current) {
+            socketRef.current.off('webrtc_signal');
             socketRef.current.disconnect();
             socketRef.current = null;
         }
@@ -302,12 +316,12 @@ export const Discover: React.FC = () => {
             supabase?.removeChannel(channelRef.current);
             channelRef.current = null;
         }
-        setRemoteUser(null);
         setIsConnected(false);
         setIsSearching(false);
         setPartnerId(null);
         setHasLiked(false);
         setMatchReveal(null);
+        setShowMatchReveal(false);
         setMessages([]);
     };
 
@@ -362,16 +376,22 @@ export const Discover: React.FC = () => {
     };
 
     const toggleMute = () => {
-        if (localAudioTrack) {
-            localAudioTrack.setEnabled(isMuted);
-            setIsMuted(!isMuted);
+        if (localStream) {
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = isMuted;
+                setIsMuted(!isMuted);
+            }
         }
     };
 
     const toggleVideo = () => {
-        if (localVideoTrack) {
-            localVideoTrack.setEnabled(isVideoOff);
-            setIsVideoOff(!isVideoOff);
+        if (localStream) {
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = isVideoOff;
+                setIsVideoOff(!isVideoOff);
+            }
         }
     };
 
@@ -383,9 +403,9 @@ export const Discover: React.FC = () => {
 
                 {/* Remote Video (Stranger) */}
                 <div className="flex-1 relative rounded-3xl overflow-hidden border-2 border-white/5 bg-black shadow-2xl min-h-[300px]">
-                    <div id="remote-video-discover" className="w-full h-full object-cover" />
+                    <video id="remote-video-discover" autoPlay playsInline className="w-full h-full object-cover" />
 
-                    {!remoteUser && (
+                    {!remoteStream && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 backdrop-blur-sm z-10 p-6 text-center">
                             {isSearching ? (
                                 <div className="space-y-6">
@@ -416,17 +436,19 @@ export const Discover: React.FC = () => {
                     )}
 
                     {/* Stranger Info Overlay */}
-                    {remoteUser && (
+                    {remoteStream && (
                         <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                            <span className="text-xs font-bold uppercase tracking-wider">Stranger</span>
+                            <span className="text-xs font-bold uppercase tracking-wider">
+                                {matchReveal ? matchReveal.partnerName : 'Stranger'}
+                            </span>
                         </div>
                     )}
                 </div>
 
                 {/* Local Video (Self) */}
                 <div className="h-1/3 md:h-1/2 relative rounded-3xl overflow-hidden border-2 border-neon/30 bg-black shadow-2xl group">
-                    <div id="local-video-discover" className="w-full h-full object-cover transform scale-x-[-1]" />
+                    <video id="local-video-discover" autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
 
                     {/* Self Controls Overlay */}
                     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-20">
@@ -444,7 +466,7 @@ export const Discover: React.FC = () => {
                         </button>
                     </div>
 
-                    {!localVideoTrack && !isSearching && !isConnected && (
+                    {!localStream && !isSearching && !isConnected && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50">
                             <VideoIcon className="w-12 h-12 text-gray-700" />
                         </div>
@@ -505,7 +527,7 @@ export const Discover: React.FC = () => {
                             <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${msg.sender === 'You' ? 'text-neon' :
                                 msg.sender === 'Stranger' ? 'text-blue-400' : 'text-gray-500'
                                 }`}>
-                                {msg.sender}
+                                {msg.sender === 'Stranger' && matchReveal ? matchReveal.partnerName : msg.sender}
                             </span>
                             <div className={`max-w-[85%] px-4 py-2 rounded-2xl text-sm ${msg.sender === 'You'
                                 ? 'bg-neon/10 border border-neon/20 text-white rounded-tr-none shadow-[0_0_15px_rgba(255,0,127,0.1)]'
@@ -548,7 +570,7 @@ export const Discover: React.FC = () => {
             </div>
 
             {/* Match Reveal Overlay */}
-            {matchReveal && (
+            {showMatchReveal && matchReveal && (
                 <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl animate-in fade-in duration-500">
                     <div className="relative text-center p-8 max-w-lg w-full transform animate-in zoom-in-95 duration-700">
                         {/* Celebration Particles */}
@@ -590,7 +612,7 @@ export const Discover: React.FC = () => {
 
                             <div className="space-y-4">
                                 <button
-                                    onClick={() => setMatchReveal(null)}
+                                    onClick={() => setShowMatchReveal(false)}
                                     className="w-full py-5 bg-neon text-white font-black rounded-2xl shadow-[0_0_50px_rgba(255,0,127,0.5)] hover:scale-105 active:scale-95 transition-all text-sm uppercase tracking-[0.2em]"
                                 >
                                     Keep Chatting
