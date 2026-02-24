@@ -58,20 +58,6 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Agora Token Generation
-app.post('/api/agora-token', async (req, res) => {
-  try {
-    const appId = process.env.AGORA_APP_ID;
-    const appCertificate = process.env.AGORA_APP_CERTIFICATE;
-    if (!appId || !appCertificate) throw new Error('Agora credentials not configured');
-    const channelName = req.body.channelName || `call_${Date.now()}`;
-    const token = RtcTokenBuilder.buildTokenWithUid(appId, appCertificate, channelName, 0, RtcRole.PUBLISHER, Math.floor(Date.now() / 1000) + 86400);
-    res.json({ token, channelName, appId, uid: "0" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 // Accept Match API
 app.post('/api/accept-match', async (req, res) => {
   try {
@@ -149,6 +135,12 @@ io.on('connection', (socket) => {
 
   socket.on('send_message', ({ room, text, sender }) => {
     socket.to(room).emit('receive_message', { text, sender });
+  });
+
+  // WebRTC Signaling
+  socket.on('webrtc_signal', ({ room, signal }) => {
+    // Relay the signal (offer, answer, or ice-candidate) to everyone else in the room
+    socket.to(room).emit('webrtc_signal', { signal, from: socket.id });
   });
 
   socket.on('disconnect', () => {
