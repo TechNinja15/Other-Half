@@ -214,7 +214,15 @@ export const Discover: React.FC = () => {
             setIsConnected(true);
             setIsSearching(false);
 
-            await initWebRTC(channelName, mode, initiator);
+            // If we are in fallback mode (no socket), we need to subscribe to the specific room channel
+            let signalingChannel = null;
+            if (!socketRef.current && supabase) {
+                console.log('[Matchmaking] Subscribing to Supabase signaling channel:', channelName);
+                signalingChannel = supabase.channel(channelName);
+                channelRef.current = signalingChannel; // Keep track for cleanup
+            }
+
+            await initWebRTC(channelName, mode, initiator, signalingChannel);
 
             isConnectingRef.current = false;
             setMessages(prev => [...prev, { sender: 'System', text: 'You are now chatting with a stranger. Say hi!' }]);
@@ -227,7 +235,7 @@ export const Discover: React.FC = () => {
         }
     };
 
-    const initWebRTC = async (channelName: string, mode: 'video' | 'text', initiator: boolean) => {
+    const initWebRTC = async (channelName: string, mode: 'video' | 'text', initiator: boolean, signalingChannel?: any) => {
         const configuration = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -237,6 +245,19 @@ export const Discover: React.FC = () => {
 
         const pc = new RTCPeerConnection(configuration);
         pcRef.current = pc;
+
+        // Helper to send signals
+        const sendSignal = (signal: any) => {
+            if (socketRef.current) {
+                socketRef.current.emit('webrtc_signal', { room: channelName, signal });
+            } else if (signalingChannel) {
+                signalingChannel.send({
+                    type: 'broadcast',
+                    event: 'webrtc_signal',
+                    payload: { signal }
+                });
+            }
+        };
 
         // Handle incoming tracks
         pc.ontrack = (event) => {
@@ -250,30 +271,37 @@ export const Discover: React.FC = () => {
 
         // Handle ICE candidates
         pc.onicecandidate = (event) => {
-            if (event.candidate && socketRef.current) {
-                socketRef.current.emit('webrtc_signal', {
-                    room: channelName,
-                    signal: { type: 'candidate', candidate: event.candidate }
-                });
+            if (event.candidate) {
+                sendSignal({ type: 'candidate', candidate: event.candidate });
+            }
+        };
+
+        const handleSignal = async (signal: any) => {
+            if (!pcRef.current) return;
+
+            if (signal.type === 'offer') {
+                await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+                const answer = await pcRef.current.createAnswer();
+                await pcRef.current.setLocalDescription(answer);
+                sendSignal(answer);
+            } else if (signal.type === 'answer') {
+                await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
+            } else if (signal.type === 'candidate') {
+                await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
             }
         };
 
         // Setup Signaling listener
         if (socketRef.current) {
-            socketRef.current.on('webrtc_signal', async ({ signal }) => {
-                if (!pcRef.current) return;
-
-                if (signal.type === 'offer') {
-                    await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-                    const answer = await pcRef.current.createAnswer();
-                    await pcRef.current.setLocalDescription(answer);
-                    socketRef.current?.emit('webrtc_signal', { room: channelName, signal: answer });
-                } else if (signal.type === 'answer') {
-                    await pcRef.current.setRemoteDescription(new RTCSessionDescription(signal));
-                } else if (signal.type === 'candidate') {
-                    await pcRef.current.addIceCandidate(new RTCIceCandidate(signal.candidate));
-                }
-            });
+            socketRef.current.on('webrtc_signal', ({ signal }) => handleSignal(signal));
+        } else if (signalingChannel) {
+            signalingChannel
+                .on('broadcast', { event: 'webrtc_signal' }, ({ payload }: any) => handleSignal(payload.signal))
+                .on('broadcast', { event: 'send_message' }, ({ payload }: any) => {
+                    // Also handle text messages via broadcast if no socket
+                    setMessages(prev => [...prev, { sender: 'Stranger', text: payload.text }]);
+                })
+                .subscribe();
         }
 
         // Add local tracks
@@ -296,7 +324,7 @@ export const Discover: React.FC = () => {
         if (initiator) {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            socketRef.current?.emit('webrtc_signal', { room: channelName, signal: offer });
+            sendSignal(offer);
         }
     };
 
@@ -375,12 +403,18 @@ export const Discover: React.FC = () => {
         setMessages(prev => [...prev, { sender: 'You', text: messageText }]);
         setInputText('');
 
-        // Send to peer via Socket.io
+        // Send to peer
         if (socketRef.current) {
             socketRef.current.emit('send_message', {
                 room: activeChannelNameRef.current,
                 text: messageText,
                 sender: sessionId
+            });
+        } else if (channelRef.current) {
+            channelRef.current.send({
+                type: 'broadcast',
+                event: 'send_message',
+                payload: { text: messageText, sender: sessionId }
             });
         }
     };
