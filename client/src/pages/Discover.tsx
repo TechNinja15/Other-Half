@@ -91,8 +91,18 @@ export const Discover: React.FC = () => {
             return;
         }
 
-        // Matchmaking via Socket.io (More reliable than Supabase Broadcast for local dev)
-        const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+        // Matchmaking via Socket.io
+        const apiUrl = import.meta.env.VITE_API_URL;
+
+        // If we are in production but API_URL is missing or pointing to localhost, 
+        // fallback immediately to Supabase Broadcast.
+        if (import.meta.env.PROD && (!apiUrl || apiUrl.includes('localhost'))) {
+            console.warn('[Matchmaking] No production API URL provided, falling back to Supabase Broadcast');
+            setupSupabaseFallback(scope, mode);
+            return;
+        }
+
+        const socket = io(apiUrl || 'http://localhost:5000');
         socketRef.current = socket;
 
         socket.on('connect', () => {
@@ -474,36 +484,41 @@ export const Discover: React.FC = () => {
                 </div>
 
                 {/* Action Bar (Bottom Mobile) */}
-                {isConnected && (
+                {(isConnected || isSearching) && (
                     <div className="flex gap-4 z-30">
-                        <button
-                            onClick={handleNext}
-                            className="flex-1 py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-white/10 group"
-                        >
-                            <SkipForward className="group-hover:translate-x-1 transition-transform" />
-                            Next Stranger
-                        </button>
+                        {isConnected && (
+                            <>
+                                <button
+                                    onClick={handleNext}
+                                    className="flex-1 py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-white/10 group"
+                                >
+                                    <SkipForward className="group-hover:translate-x-1 transition-transform" />
+                                    Next Stranger
+                                </button>
 
-                        <button
-                            onClick={handleLike}
-                            disabled={hasLiked}
-                            className={`px-6 py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold ${hasLiked
-                                ? 'bg-red-500 text-white border-red-500'
-                                : 'bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white'
-                                }`}
-                        >
-                            <Heart className={hasLiked ? 'fill-current' : ''} size={20} />
-                            {hasLiked ? 'Liked' : 'Like'}
-                        </button>
+                                <button
+                                    onClick={handleLike}
+                                    disabled={hasLiked}
+                                    className={`px-6 py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold ${hasLiked
+                                        ? 'bg-red-500 text-white border-red-500'
+                                        : 'bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white'
+                                        }`}
+                                >
+                                    <Heart className={hasLiked ? 'fill-current' : ''} size={20} />
+                                    {hasLiked ? 'Liked' : 'Like'}
+                                </button>
+                            </>
+                        )}
 
                         <button
                             onClick={stopConnection}
                             className="px-6 py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30"
                         >
-                            Stop
+                            {isConnected ? 'Stop' : 'Cancel'}
                         </button>
                     </div>
                 )}
+
             </div>
 
             {/* Chat Section */}
