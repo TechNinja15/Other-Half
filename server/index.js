@@ -88,23 +88,24 @@ app.post('/api/accept-match', async (req, res) => {
       ]);
 
       const { data: profiles } = await supabase.from('profiles').select('id, real_name').in('id', [myId, targetId]);
-      if (profiles) {
-        const myProfile = profiles.find(p => p.id === myId);
-        const targetProfile = profiles.find(p => p.id === targetId);
 
-        // Use provided room name as priority, fallback to generated one
-        const roomName = room || `discover_room_${[myId, targetId].sort().join('_')}`;
-        console.log(`[Matchmaking] Emitting match_reveal to room: ${roomName}`);
+      const matchUsers = profiles ? [
+        { id: myId, name: profiles.find(p => p.id === myId)?.real_name || 'Someone' },
+        { id: targetId, name: profiles.find(p => p.id === targetId)?.real_name || 'Someone' }
+      ] : [
+        { id: myId, name: 'Someone' },
+        { id: targetId, name: 'Someone' }
+      ];
 
-        io.to(roomName).emit('match_reveal', {
-          users: [
-            { id: myId, name: myProfile?.real_name || 'Someone' },
-            { id: targetId, name: targetProfile?.real_name || 'Someone' }
-          ]
-        });
-      }
+      // Use provided room name as priority, fallback to generated one
+      const roomName = room || `discover_room_${[myId, targetId].sort().join('_')}`;
+      console.log(`[Matchmaking] Emitting match_reveal to room: ${roomName}`);
+
+      io.to(roomName).emit('match_reveal', { users: matchUsers });
+
+      return res.json({ success: true, isMutual: true, users: matchUsers });
     }
-    res.json({ success: true, isMutual: !!reciprocalSwipe });
+    res.json({ success: true, isMutual: false });
   } catch (error) {
     console.error('[Like] Error:', error);
     res.status(500).json({ success: false, error: error.message });

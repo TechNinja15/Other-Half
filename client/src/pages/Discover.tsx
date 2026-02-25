@@ -88,12 +88,14 @@ export const Discover: React.FC = () => {
         const channel = supabase
             .channel(`matches_reveal_${currentUser.id}`)
             .on('postgres_changes', {
-                event: 'INSERT',
+                event: '*', // Listen for ALL changes (INSERT, UPDATE)
                 schema: 'public',
                 table: 'matches'
             }, async (payload: any) => {
                 const newMatch = payload.new;
-                console.log('[Matchmaking] [DB-MATCH] New match record detected:', newMatch);
+                console.log('[Matchmaking] [DB-MATCH] Change detected:', payload.eventType, newMatch);
+
+                if (!newMatch) return;
 
                 // Check if this user is part of the match
                 if (newMatch.user_a === currentUser.id || newMatch.user_b === currentUser.id) {
@@ -109,7 +111,7 @@ export const Discover: React.FC = () => {
                             .select('id, real_name')
                             .in('id', [currentUser.id, otherId]);
 
-                        if (profiles) {
+                        if (profiles && profiles.length > 0) {
                             const myProfile = profiles.find(p => p.id === currentUser.id);
                             const pProfile = profiles.find(p => p.id === otherId);
 
@@ -118,10 +120,7 @@ export const Discover: React.FC = () => {
                                 partnerName: pProfile?.real_name || 'Stranger'
                             });
                             setShowMatchReveal(true);
-                            showToast(`It's a Match! Names revealed via DB.`, 'success');
                         }
-                    } else {
-                        console.log('[Matchmaking] [DB-MATCH] Match is for a different session or user.', { partnerId, otherId });
                     }
                 }
             })
@@ -548,7 +547,29 @@ export const Discover: React.FC = () => {
                 }
                 const data = await response.json();
                 if (data.success) {
-                    showToast(data.isMutual ? 'It\'s a Match!' : 'Liked! If they like back, it\'s a match!', 'success');
+                    if (data.isMutual && data.users) {
+                        const partnerProfile = data.users.find((u: any) => u.id !== currentUser.id) || data.users[1];
+                        const myProfile = data.users.find((u: any) => u.id === currentUser.id) || data.users[0];
+
+                        if (myProfile && partnerProfile) {
+                            console.log('[Like] [API] Mutual match found! Triggering reveal UI');
+                            setMatchReveal({ myName: myProfile.name, partnerName: partnerProfile.name });
+                            setShowMatchReveal(true);
+                            showToast(`It's a Match! Names revealed!`, 'success');
+
+                            // Also broadcast to partner in case they are on fallback
+                            if (channelRef.current) {
+                                console.log('[Like] [API] Broadcasting reveal to partner');
+                                channelRef.current.send({
+                                    type: 'broadcast',
+                                    event: 'match_reveal',
+                                    payload: { users: data.users }
+                                });
+                            }
+                        }
+                    } else {
+                        showToast('Liked! If they like back, it\'s a match!', 'success');
+                    }
                 }
             } else {
                 // Supabase Direct Fallback
