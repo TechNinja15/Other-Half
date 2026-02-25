@@ -49,10 +49,14 @@ export const Discover: React.FC = () => {
     const socketRef = useRef<Socket | null>(null);
     const activeChannelNameRef = useRef<string | null>(null);
     const connectedPartnerIdRef = useRef<string | null>(null);
+    const hasLikedPartnerRef = useRef(false);
 
     useEffect(() => { isSearchingRef.current = isSearching; }, [isSearching]);
     useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
-    useEffect(() => { connectedPartnerIdRef.current = partnerId; }, [partnerId]);
+    useEffect(() => {
+        connectedPartnerIdRef.current = partnerId;
+        hasLikedPartnerRef.current = false; // Reset whenever partner changes
+    }, [partnerId]);
 
     // Re-sync lobby when currentUser becomes available
     useEffect(() => {
@@ -78,60 +82,6 @@ export const Discover: React.FC = () => {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
-
-    // Robust Match Reveal via Postgres Changes (Source of truth)
-    useEffect(() => {
-        if (!currentUser?.id || !supabase) return;
-
-        console.log('[Matchmaking] Subscribing to postgres matches changes for:', currentUser.id);
-
-        const channel = supabase
-            .channel(`matches_reveal_${currentUser.id}`)
-            .on('postgres_changes', {
-                event: '*', // Listen for ALL changes (INSERT, UPDATE)
-                schema: 'public',
-                table: 'matches'
-            }, async (payload: any) => {
-                const newMatch = payload.new;
-                console.log('[Matchmaking] [DB-MATCH] Change detected:', payload.eventType, newMatch);
-
-                if (!newMatch) return;
-
-                // Check if this user is part of the match
-                if (newMatch.user_a === currentUser.id || newMatch.user_b === currentUser.id) {
-                    const otherId = newMatch.user_a === currentUser.id ? newMatch.user_b : newMatch.user_a;
-
-                    // IF we are currently connected to this specific stranger, trigger reveal
-                    if (partnerId === otherId || connectedPartnerIdRef.current === otherId) {
-                        console.log('[Matchmaking] [DB-MATCH] Match belongs to current session! Triggering reveal...');
-
-                        // Fetch names if not already known
-                        const { data: profiles } = await supabase
-                            .from('profiles')
-                            .select('id, real_name')
-                            .in('id', [currentUser.id, otherId]);
-
-                        if (profiles && profiles.length > 0) {
-                            const myProfile = profiles.find(p => p.id === currentUser.id);
-                            const pProfile = profiles.find(p => p.id === otherId);
-
-                            setMatchReveal({
-                                myName: myProfile?.real_name || 'Me',
-                                partnerName: pProfile?.real_name || 'Stranger'
-                            });
-                            setShowMatchReveal(true);
-                        }
-                    }
-                }
-            })
-            .subscribe((status) => {
-                console.log('[Matchmaking] Match subscription status:', status);
-            });
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [currentUser?.id, partnerId]); // Re-subscribe when partner changes to ensure correct matching
 
     const scrollToBottom = () => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -400,6 +350,42 @@ export const Discover: React.FC = () => {
                         console.warn('[Matchmaking] [REVEAL] Could not determine profiles from payload', { myProfile, partnerProfile });
                     }
                 })
+                .on('broadcast', { event: 'peer_like' }, async () => {
+                    console.log('[Matchmaking] [SIGNAL] Received peer_like broadcast');
+                    if (hasLikedPartnerRef.current && !showMatchReveal) {
+                        console.log('[Matchmaking] [SIGNAL] Mutual match detected via signal!');
+
+                        // Fetch profiles for reveal
+                        const { data: profiles } = await supabase!
+                            .from('profiles')
+                            .select('id, real_name')
+                            .in('id', [currentUser?.id, connectedPartnerIdRef.current].filter(Boolean));
+
+                        if (profiles && profiles.length > 0) {
+                            const myProfile = profiles.find(p => p.id === currentUser?.id);
+                            const pProfile = profiles.find(p => p.id === connectedPartnerIdRef.current);
+
+                            const revealData = {
+                                users: [
+                                    { id: currentUser?.id, name: myProfile?.real_name || 'Me' },
+                                    { id: connectedPartnerIdRef.current, name: pProfile?.real_name || 'Stranger' }
+                                ]
+                            };
+
+                            setMatchReveal({ myName: revealData.users[0].name, partnerName: revealData.users[1].name });
+                            setShowMatchReveal(true);
+
+                            // Reply with reveal just in case
+                            if (channelRef.current) {
+                                channelRef.current.send({
+                                    type: 'broadcast',
+                                    event: 'match_reveal',
+                                    payload: revealData
+                                });
+                            }
+                        }
+                    }
+                })
                 .subscribe();
         }
 
@@ -568,7 +554,18 @@ export const Discover: React.FC = () => {
                             }
                         }
                     } else {
+                        console.log('[Like] [API] Like recorded');
                         showToast('Liked! If they like back, it\'s a match!', 'success');
+
+                        // Signal to peer
+                        if (channelRef.current) {
+                            console.log('[Like] [API] Signaling peer_like to partner');
+                            channelRef.current.send({
+                                type: 'broadcast',
+                                event: 'peer_like',
+                                payload: { from: currentUser.id }
+                            });
+                        }
                     }
                 }
             } else {
@@ -576,99 +573,77 @@ export const Discover: React.FC = () => {
                 console.log('[Like] [Fallback] Using Supabase Direct logic');
                 if (!supabase) throw new Error('Database client missing');
 
+                // 0. Update local state
+                hasLikedPartnerRef.current = true;
+
                 // 1. Insert 'like' swipe
                 console.log('[Like] [Fallback] Upserting swipe:', { liker_id: currentUser.id, target_id: partnerId, action: 'like' });
-                const { error: swipeError } = await supabase.from('swipes').upsert({
+                await supabase.from('swipes').upsert({
                     liker_id: currentUser.id,
                     target_id: partnerId,
                     action: 'like'
                 }, { onConflict: 'liker_id,target_id' });
 
-                if (swipeError) {
-                    console.error('[Like] [Fallback] Swipe upsert error:', swipeError);
-                    throw new Error(`Swipe failed: ${swipeError.message}`);
+                // 2. Broadcast 'peer_like' signal so partner can check their state
+                if (channelRef.current) {
+                    console.log('[Like] [Fallback] Broadcasting peer_like signal');
+                    channelRef.current.send({
+                        type: 'broadcast',
+                        event: 'peer_like',
+                        payload: { from: currentUser.id }
+                    });
                 }
 
-                // 2. Check for mutual match
-                console.log('[Like] [Fallback] Checking for reciprocal swipe from:', partnerId);
-                const { data: reciprocalSwipe, error: checkError } = await supabase
+                // 3. Check for existing mutual match (incase they liked FIRST)
+                console.log('[Like] [Fallback] Checking for existing mutual swipe from:', partnerId);
+                // Note: This might still fail due to RLS if not using RPC, but Signaling covers it.
+                const { data: reciprocalSwipe } = await supabase
                     .from('swipes')
-                    .select('*')
+                    .select('id')
                     .eq('liker_id', partnerId)
                     .eq('target_id', currentUser.id)
                     .eq('action', 'like')
                     .maybeSingle();
 
-                if (checkError) {
-                    console.error('[Like] [Fallback] Reciprocal check error:', checkError);
-                }
-
                 if (reciprocalSwipe) {
-                    console.log('[Like] [Fallback] Mutual match found!', reciprocalSwipe);
+                    console.log('[Like] [Fallback] Mutual match found in DB!');
 
-                    // 3. Create match and notifications
-                    const users = [currentUser.id, partnerId].sort();
-                    const [user_a, user_b] = users;
-
-                    console.log('[Like] [Fallback] Creating match record:', { user_a, user_b });
-                    await supabase.from('matches').upsert({ user_a, user_b }, { onConflict: 'user_a,user_b' });
-
-                    console.log('[Like] [Fallback] Sending notifications...');
-                    await supabase.from('notifications').upsert([
-                        { user_id: currentUser.id, type: 'match', title: "It's a Match!", message: 'You have a new match!', from_user_id: partnerId },
-                        { user_id: partnerId, type: 'match', title: "It's a Match!", message: 'You have a new match!', from_user_id: currentUser.id }
-                    ]);
-
-                    // 4. Get profiles for reveal
-                    console.log('[Like] [Fallback] Fetching profiles for reveal...');
-                    const { data: profiles, error: profileError } = await supabase
+                    // Reveal to SELF
+                    const { data: profiles } = await supabase
                         .from('profiles')
                         .select('id, real_name')
                         .in('id', [currentUser.id, partnerId]);
 
-                    if (profileError) console.error('[Like] [Fallback] Profile fetch error:', profileError);
-
                     if (profiles && profiles.length > 0) {
                         const myProfile = profiles.find(p => p.id === currentUser.id);
-                        const partnerProfile = profiles.find(p => p.id === partnerId);
-
-                        console.log('[Like] [Fallback] Profiles found:', { my: myProfile, partner: partnerProfile });
-
-                        const myName = myProfile?.real_name || 'Me';
-                        const partnerName = partnerProfile?.real_name || 'Stranger';
+                        const pProfile = profiles.find(p => p.id === partnerId);
 
                         const revealData = {
                             users: [
-                                { id: currentUser.id, name: myName },
-                                { id: partnerId, name: partnerName }
+                                { id: currentUser.id, name: myProfile?.real_name || 'Me' },
+                                { id: partnerId, name: pProfile?.real_name || 'Stranger' }
                             ]
                         };
 
-                        // 5. Reveal to SELF
-                        console.log('[Like] [Fallback] Revealing to SELF');
-                        setMatchReveal({ myName, partnerName });
+                        setMatchReveal({ myName: revealData.users[0].name, partnerName: revealData.users[1].name });
                         setShowMatchReveal(true);
                         showToast(`It's a Match! Names revealed!`, 'success');
 
-                        // 6. Broadcast to PARTNER
+                        // Create match record in DB
+                        const [user_a, user_b] = [currentUser.id, partnerId].sort();
+                        await supabase.from('matches').upsert({ user_a, user_b }, { onConflict: 'user_a,user_b' });
+
+                        // Broadcast reveal to PARTNER
                         if (channelRef.current) {
-                            console.log('[Like] [Fallback] Broadcasting reveal to partner:', revealData);
                             channelRef.current.send({
                                 type: 'broadcast',
                                 event: 'match_reveal',
                                 payload: revealData
                             });
-                        } else {
-                            console.error('[Like] [Fallback] channelRef.current is empty, cannot broadcast reveal!');
                         }
-                    } else {
-                        console.warn('[Like] [Fallback] No profiles found for reveal even though match happened');
-                        // Even with no data, show something
-                        setMatchReveal({ myName: 'Me', partnerName: 'Match' });
-                        setShowMatchReveal(true);
                     }
                 } else {
-                    console.log('[Like] [Fallback] No reciprocal swipe yet.');
+                    console.log('[Like] [Fallback] No reciprocal swipe yet in DB.');
                     showToast('Liked! If they like back, it\'s a match!', 'success');
                 }
             }
