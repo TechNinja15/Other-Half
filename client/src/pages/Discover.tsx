@@ -301,6 +301,18 @@ export const Discover: React.FC = () => {
                     // Also handle text messages via broadcast if no socket
                     setMessages(prev => [...prev, { sender: 'Stranger', text: payload.text }]);
                 })
+                .on('broadcast', { event: 'match_reveal' }, ({ payload }: any) => {
+                    // Handle mutual match reveal via broadcast fallback
+                    console.log('[Matchmaking] Received match_reveal via broadcast:', payload.users);
+                    const partnerProfile = payload.users.find((u: any) => u.id !== currentUser?.id) || payload.users[1];
+                    const myProfile = payload.users.find((u: any) => u.id === currentUser?.id) || payload.users[0];
+
+                    if (myProfile && partnerProfile) {
+                        setMatchReveal({ myName: myProfile.name, partnerName: partnerProfile.name });
+                        setShowMatchReveal(true);
+                        showToast(`It's a Match! Names revealed: ${myProfile.name} & ${partnerProfile.name}`, 'success');
+                    }
+                })
                 .subscribe();
         }
 
@@ -367,23 +379,98 @@ export const Discover: React.FC = () => {
         if (!currentUser || !partnerId || hasLiked) return;
 
         try {
-            console.log(`[Like] Sending like from ${currentUser.id} to ${partnerId} in room ${activeChannelNameRef.current}`);
+            console.log(`[Like] Action received: ${currentUser.id} -> ${partnerId} (Room: ${activeChannelNameRef.current})`);
             setHasLiked(true);
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/accept-match`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    myId: currentUser.id,
-                    targetId: partnerId,
-                    room: activeChannelNameRef.current
-                })
-            });
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || 'Failed to like');
+            const apiUrl = import.meta.env.VITE_API_URL;
+            const useBackend = !(import.meta.env.PROD && (!apiUrl || apiUrl.includes('localhost')));
+
+            if (useBackend) {
+                const response = await fetch(`${apiUrl || 'http://localhost:5000'}/api/accept-match`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        myId: currentUser.id,
+                        targetId: partnerId,
+                        room: activeChannelNameRef.current
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || 'Failed to like');
+                }
+                const data = await response.json();
+                if (data.success) {
+                    showToast(data.isMutual ? 'It\'s a Match!' : 'Liked! If they like back, it\'s a match!', 'success');
+                }
+            } else {
+                // Supabase Direct Fallback
+                if (!supabase) throw new Error('Database client missing');
+
+                // 1. Insert 'like' swipe
+                await supabase.from('swipes').upsert({
+                    liker_id: currentUser.id,
+                    target_id: partnerId,
+                    action: 'like'
+                }, { onConflict: 'liker_id,target_id' });
+
+                // 2. Check for mutual match
+                const { data: reciprocalSwipe } = await supabase
+                    .from('swipes')
+                    .select('*')
+                    .eq('liker_id', partnerId)
+                    .eq('target_id', currentUser.id)
+                    .eq('action', 'like')
+                    .single();
+
+                if (reciprocalSwipe) {
+                    console.log(`[Matchmaking] Mutual match! ${currentUser.id} <-> ${partnerId}`);
+
+                    // 3. Create match and notifications
+                    const [user_a, user_b] = [currentUser.id, partnerId].sort();
+                    await supabase.from('matches').upsert({ user_a, user_b }, { onConflict: 'user_a,user_b' });
+
+                    await supabase.from('notifications').upsert([
+                        { user_id: currentUser.id, type: 'match', title: "It's a Match!", message: 'You have a new match!', from_user_id: partnerId },
+                        { user_id: partnerId, type: 'match', title: "It's a Match!", message: 'You have a new match!', from_user_id: currentUser.id }
+                    ]);
+
+                    // 4. Get profiles for reveal
+                    const { data: profiles } = await supabase.from('profiles').select('id, real_name').in('id', [currentUser.id, partnerId]);
+
+                    if (profiles) {
+                        const myProfile = profiles.find(p => p.id === currentUser.id);
+                        const partnerProfile = profiles.find(p => p.id === partnerId);
+
+                        const revealData = {
+                            users: [
+                                { id: currentUser.id, name: myProfile?.real_name || 'Someone' },
+                                { id: partnerId, name: partnerProfile?.real_name || 'Someone' }
+                            ]
+                        };
+
+                        // 5. Reveal to SELF
+                        setMatchReveal({
+                            myName: myProfile?.real_name || 'Me',
+                            partnerName: partnerProfile?.real_name || 'Stranger'
+                        });
+                        setShowMatchReveal(true);
+                        showToast(`It's a Match! Names revealed!`, 'success');
+
+                        // 6. Broadcast to PARTNER
+                        if (channelRef.current) {
+                            channelRef.current.send({
+                                type: 'broadcast',
+                                event: 'match_reveal',
+                                payload: revealData
+                            });
+                        }
+                    }
+                } else {
+                    showToast('Liked! If they like back, it\'s a match!', 'success');
+                }
             }
-            showToast('Liked! If they like back, it\'s a match!', 'success');
         } catch (err: any) {
             console.error('[Like] Error details:', err);
             setHasLiked(false);
