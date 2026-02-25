@@ -656,7 +656,7 @@ export const Discover: React.FC = () => {
     };
 
     return (
-        <div className="h-full w-full bg-black flex flex-col md:flex-row overflow-hidden text-white font-sans">
+        <div className="h-[100dvh] w-full bg-black flex flex-col md:flex-row overflow-hidden text-white font-sans">
 
             {/* Mobile View Toggle */}
             <div className="md:hidden flex bg-gray-900 border-b border-white/5 p-2 gap-2 sticky top-0 z-[60]">
@@ -683,7 +683,7 @@ export const Discover: React.FC = () => {
             <div className={`flex-[3] relative bg-gray-900/50 flex flex-col p-4 gap-4 transition-all duration-500 ${mobileView === 'video' ? 'flex' : 'hidden'} md:flex ${chatMode === 'text' ? 'opacity-20 pointer-events-none grayscale' : ''}`}>
 
                 {/* Remote Video (Stranger) */}
-                <div className="flex-1 relative rounded-3xl overflow-hidden border-2 border-white/5 bg-black shadow-2xl min-h-[300px]">
+                <div className="flex-1 relative rounded-3xl overflow-hidden border-2 border-white/5 bg-black shadow-2xl min-h-0 md:min-h-[300px]">
                     <video id="remote-video-discover" autoPlay playsInline className="w-full h-full object-cover" />
 
                     {!remoteStream && (
@@ -728,7 +728,7 @@ export const Discover: React.FC = () => {
                 </div>
 
                 {/* Local Video (Self) */}
-                <div className="h-1/3 md:h-1/2 relative rounded-3xl overflow-hidden border-2 border-neon/30 bg-black shadow-2xl group">
+                <div className="h-[120px] md:h-1/2 relative rounded-3xl overflow-hidden border-2 border-neon/30 bg-black shadow-2xl group shrink-0">
                     <video id="local-video-discover" autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
 
                     {/* Self Controls Overlay */}
@@ -756,26 +756,26 @@ export const Discover: React.FC = () => {
 
                 {/* Action Bar (Bottom Mobile) */}
                 {(isConnected || isSearching) && (
-                    <div className="flex flex-wrap md:flex-nowrap gap-3 md:gap-4 z-30 mt-auto md:mt-2">
+                    <div className="flex flex-wrap md:flex-nowrap gap-2 md:gap-4 z-30 mt-auto md:mt-2 pb-2 md:pb-0">
                         {isConnected && (
                             <>
                                 <button
                                     onClick={handleNext}
-                                    className="flex-[2] py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-white/10 group min-w-[200px]"
+                                    className="flex-[2] py-3 md:py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-white/10 group min-w-[150px] text-sm"
                                 >
-                                    <SkipForward className="group-hover:translate-x-1 transition-transform" />
-                                    Next Stranger
+                                    <SkipForward size={18} className="group-hover:translate-x-1 transition-transform" />
+                                    Next
                                 </button>
 
                                 <button
                                     onClick={handleLike}
                                     disabled={hasLiked}
-                                    className={`flex-1 px-6 py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold min-w-[120px] ${hasLiked
+                                    className={`flex-1 px-4 md:px-6 py-3 md:py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold min-w-[80px] text-sm ${hasLiked
                                         ? 'bg-red-500 text-white border-red-500'
                                         : 'bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white'
                                         }`}
                                 >
-                                    <Heart className={hasLiked ? 'fill-current' : ''} size={20} />
+                                    <Heart className={hasLiked ? 'fill-current' : ''} size={18} />
                                     {hasLiked ? 'Liked' : 'Like'}
                                 </button>
                             </>
@@ -783,7 +783,7 @@ export const Discover: React.FC = () => {
 
                         <button
                             onClick={stopConnection}
-                            className="flex-1 md:flex-none px-6 py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30 min-w-[100px]"
+                            className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30 min-w-[80px] text-sm"
                         >
                             {isConnected ? 'Stop' : 'Cancel'}
                         </button>
