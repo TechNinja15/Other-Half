@@ -39,6 +39,9 @@ export const Discover: React.FC = () => {
     const [partnerId, setPartnerId] = useState<string | null>(null);
     const [matchReveal, setMatchReveal] = useState<{ myName: string, partnerName: string } | null>(null);
     const [showMatchReveal, setShowMatchReveal] = useState(false);
+    const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+    const [incomingMessagePopup, setIncomingMessagePopup] = useState<{ sender: string, text: string } | null>(null);
+    const popupTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const channelRef = useRef<any>(null); // Supabase broadcast channel
@@ -97,7 +100,10 @@ export const Discover: React.FC = () => {
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages]);
+        if (mobileView === 'chat') {
+            setHasUnreadMessages(false);
+        }
+    }, [messages, mobileView]);
 
     const scrollToBottom = () => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -147,6 +153,17 @@ export const Discover: React.FC = () => {
         socket.on('receive_message', ({ text, sender }) => {
             console.log('[Chat] Received message:', text, 'from:', sender);
             setMessages(prev => [...prev, { sender: 'Stranger', text }]);
+
+            if (mobileView !== 'chat') {
+                setHasUnreadMessages(true);
+            }
+
+            // Show popup
+            if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+            setIncomingMessagePopup({ sender: 'Stranger', text });
+            popupTimerRef.current = setTimeout(() => {
+                setIncomingMessagePopup(null);
+            }, 4000);
         });
 
         socket.on('match_reveal', ({ users }) => {
@@ -344,6 +361,17 @@ export const Discover: React.FC = () => {
                 .on('broadcast', { event: 'send_message' }, ({ payload }: any) => {
                     // Also handle text messages via broadcast if no socket
                     setMessages(prev => [...prev, { sender: 'Stranger', text: payload.text }]);
+
+                    if (mobileView !== 'chat') {
+                        setHasUnreadMessages(true);
+                    }
+
+                    // Show popup
+                    if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+                    setIncomingMessagePopup({ sender: 'Stranger', text: payload.text });
+                    popupTimerRef.current = setTimeout(() => {
+                        setIncomingMessagePopup(null);
+                    }, 4000);
                 })
                 .on('broadcast', { event: 'match_reveal' }, ({ payload }: any) => {
                     // Handle mutual match reveal via broadcast fallback
@@ -684,21 +712,21 @@ export const Discover: React.FC = () => {
                 </button>
                 <button
                     onClick={() => setMobileView('chat')}
-                    className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${mobileView === 'chat' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'text-gray-500'}`}
+                    className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all relative ${mobileView === 'chat' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'text-gray-500'}`}
                 >
                     <MessageCircle size={18} />
                     Chat
-                    {messages.length > 0 && !isConnected && (
-                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    {hasUnreadMessages && (
+                        <div className="absolute top-2 right-4 w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
                     )}
                 </button>
             </div>
 
             {/* Video Section */}
-            <div className={`flex-[3] relative bg-gray-900/50 flex flex-col p-4 gap-4 transition-all duration-500 ${mobileView === 'video' ? 'flex' : 'hidden'} md:flex ${chatMode === 'text' ? 'opacity-20 pointer-events-none grayscale' : ''}`}>
+            <div className={`flex-[3] relative bg-gray-900/50 flex flex-col p-4 md:p-4 gap-4 md:gap-4 transition-all duration-500 ${mobileView === 'video' ? 'flex' : 'hidden'} md:flex ${chatMode === 'text' ? 'opacity-20 pointer-events-none grayscale' : ''} ${mobileView === 'video' ? '!p-0 !gap-0' : ''}`}>
 
                 {/* Remote Video (Stranger) */}
-                <div className="flex-1 relative rounded-3xl overflow-hidden border-2 border-white/5 bg-black shadow-2xl min-h-0 md:min-h-[300px]">
+                <div className="flex-1 relative md:relative rounded-none md:rounded-3xl overflow-hidden border-0 md:border-2 border-white/5 bg-black shadow-2xl min-h-0 md:min-h-[300px] absolute inset-0 md:inset-auto z-0 md:z-10">
                     <video id="remote-video-discover" autoPlay playsInline className="w-full h-full object-cover" />
 
                     {!remoteStream && (
@@ -740,27 +768,26 @@ export const Discover: React.FC = () => {
                             </span>
                         </div>
                     )}
+
+                    {/* Incoming Message Popup (4sec) */}
+                    {incomingMessagePopup && (
+                        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-xs animate-in fade-in slide-in-from-top-4 duration-300">
+                            <div className="bg-white/10 backdrop-blur-xl border border-white/20 p-3 rounded-2xl shadow-2xl flex items-start gap-3">
+                                <div className="p-2 bg-blue-500/20 rounded-xl">
+                                    <MessageCircle size={16} className="text-blue-400" />
+                                </div>
+                                <div className="flex-1 min-w-0 text-left">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-0.5">New Message</p>
+                                    <p className="text-sm text-white font-bold truncate">{incomingMessagePopup.text}</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* Local Video (Self) */}
-                <div className="h-[120px] md:h-1/2 relative rounded-3xl overflow-hidden border-2 border-neon/30 bg-black shadow-2xl group shrink-0">
-                    <video id="local-video-discover" autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
-
-                    {/* Self Controls Overlay */}
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-20">
-                        <button
-                            onClick={toggleMute}
-                            className={`p-3 rounded-full backdrop-blur-md transition-all ${isMuted ? 'bg-red-500 text-white' : 'bg-black/40 text-white hover:bg-neon'}`}
-                        >
-                            {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
-                        </button>
-                        <button
-                            onClick={toggleVideo}
-                            className={`p-3 rounded-full backdrop-blur-md transition-all ${isVideoOff ? 'bg-red-500 text-white' : 'bg-black/40 text-white hover:bg-neon'}`}
-                        >
-                            {isVideoOff ? <VideoOff size={20} /> : <VideoIcon size={20} />}
-                        </button>
-                    </div>
+                {/* Local Video (Self) - PIP on mobile */}
+                <div className="h-[120px] md:h-1/2 w-auto aspect-[3/4] md:w-full md:aspect-auto absolute bottom-32 right-6 md:relative md:bottom-auto md:right-auto rounded-2xl md:rounded-3xl overflow-hidden border-2 border-white/20 md:border-neon/30 bg-black shadow-2xl group shrink-0 z-20 md:z-10">
+                    <video id="local-video-discover" autoPlay playsInline muted className="w-full h-full object-cover -scale-x-100" />
 
                     {!localStream && !isSearching && !isConnected && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50">
@@ -769,9 +796,27 @@ export const Discover: React.FC = () => {
                     )}
                 </div>
 
+                {/* Floating Video Controls - Center Bottom */}
+                {(isConnected || isSearching || localStream) && (
+                    <div className="absolute bottom-40 md:bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 md:gap-6 z-40 bg-black/40 backdrop-blur-xl border border-white/10 p-2 md:p-3 rounded-full shadow-2xl transition-all duration-300">
+                        <button
+                            onClick={toggleMute}
+                            className={`p-3 md:p-4 rounded-full transition-all ${isMuted ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'bg-white/10 text-white hover:bg-neon hover:shadow-[0_0_15px_rgba(255,0,127,0.4)]'}`}
+                        >
+                            {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+                        </button>
+                        <button
+                            onClick={toggleVideo}
+                            className={`p-3 md:p-4 rounded-full transition-all ${isVideoOff ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'bg-white/10 text-white hover:bg-neon hover:shadow-[0_0_15px_rgba(255,0,127,0.4)]'}`}
+                        >
+                            {isVideoOff ? <VideoOff size={20} /> : <VideoIcon size={20} />}
+                        </button>
+                    </div>
+                )}
+
                 {/* Action Bar (Bottom Mobile) */}
                 {(isConnected || isSearching) && (
-                    <div className="flex flex-wrap md:flex-nowrap gap-2 md:gap-4 z-30 mt-auto md:mt-2 pb-2 md:pb-0">
+                    <div className="flex flex-wrap md:flex-nowrap gap-2 md:gap-4 z-30 mt-auto md:mt-2 p-4 md:p-0 pb-6 md:pb-0 relative md:static">
                         {isConnected && (
                             <>
                                 <button
@@ -797,7 +842,7 @@ export const Discover: React.FC = () => {
                         )}
 
                         <button
-                            onClick={stopConnection}
+                            onClick={handleExit}
                             className="flex-1 md:flex-none px-4 md:px-6 py-3 md:py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30 min-w-[80px] text-sm"
                         >
                             {isConnected ? 'Stop' : 'Cancel'}
@@ -816,7 +861,7 @@ export const Discover: React.FC = () => {
                         <MessageCircle className="text-neon w-5 h-5 text-neon drop-shadow-[0_0_8px_rgba(255,0,127,0.5)]" />
                         <h3 className="font-bold uppercase tracking-tighter">Live Chat</h3>
                     </div>
-                    <button onClick={() => navigate('/home')} className="text-gray-500 hover:text-white transition-colors">
+                    <button onClick={() => setMobileView('video')} className="text-gray-500 hover:text-white transition-colors">
                         <X size={20} />
                     </button>
                 </div>
