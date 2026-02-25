@@ -48,9 +48,11 @@ export const Discover: React.FC = () => {
     const isConnectingRef = useRef(false);
     const socketRef = useRef<Socket | null>(null);
     const activeChannelNameRef = useRef<string | null>(null);
+    const connectedPartnerIdRef = useRef<string | null>(null);
 
     useEffect(() => { isSearchingRef.current = isSearching; }, [isSearching]);
     useEffect(() => { isConnectedRef.current = isConnected; }, [isConnected]);
+    useEffect(() => { connectedPartnerIdRef.current = partnerId; }, [partnerId]);
 
     // Re-sync lobby when currentUser becomes available
     useEffect(() => {
@@ -76,6 +78,61 @@ export const Discover: React.FC = () => {
     useEffect(() => {
         scrollToBottom();
     }, [messages]);
+
+    // Robust Match Reveal via Postgres Changes (Source of truth)
+    useEffect(() => {
+        if (!currentUser?.id || !supabase) return;
+
+        console.log('[Matchmaking] Subscribing to postgres matches changes for:', currentUser.id);
+
+        const channel = supabase
+            .channel(`matches_reveal_${currentUser.id}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'matches'
+            }, async (payload: any) => {
+                const newMatch = payload.new;
+                console.log('[Matchmaking] [DB-MATCH] New match record detected:', newMatch);
+
+                // Check if this user is part of the match
+                if (newMatch.user_a === currentUser.id || newMatch.user_b === currentUser.id) {
+                    const otherId = newMatch.user_a === currentUser.id ? newMatch.user_b : newMatch.user_a;
+
+                    // IF we are currently connected to this specific stranger, trigger reveal
+                    if (partnerId === otherId || connectedPartnerIdRef.current === otherId) {
+                        console.log('[Matchmaking] [DB-MATCH] Match belongs to current session! Triggering reveal...');
+
+                        // Fetch names if not already known
+                        const { data: profiles } = await supabase
+                            .from('profiles')
+                            .select('id, real_name')
+                            .in('id', [currentUser.id, otherId]);
+
+                        if (profiles) {
+                            const myProfile = profiles.find(p => p.id === currentUser.id);
+                            const pProfile = profiles.find(p => p.id === otherId);
+
+                            setMatchReveal({
+                                myName: myProfile?.real_name || 'Me',
+                                partnerName: pProfile?.real_name || 'Stranger'
+                            });
+                            setShowMatchReveal(true);
+                            showToast(`It's a Match! Names revealed via DB.`, 'success');
+                        }
+                    } else {
+                        console.log('[Matchmaking] [DB-MATCH] Match is for a different session or user.', { partnerId, otherId });
+                    }
+                }
+            })
+            .subscribe((status) => {
+                console.log('[Matchmaking] Match subscription status:', status);
+            });
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [currentUser?.id, partnerId]); // Re-subscribe when partner changes to ensure correct matching
 
     const scrollToBottom = () => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
