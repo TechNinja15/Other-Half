@@ -51,7 +51,13 @@ export const initiateCall = async (
         console.log(`[CallSignaling] Broadcast signal sent to ${receiverId}`);
 
         // 2. Get Agora Token from API
-        const apiUrl = import.meta.env.VITE_API_URL || '';
+        const apiUrl = import.meta.env.VITE_API_URL;
+
+        if (import.meta.env.PROD && (!apiUrl || apiUrl.includes('localhost'))) {
+            console.error('[CallSignaling] Cannot initiate call: No production API URL provided');
+            return null;
+        }
+
         const response = await fetch(`${apiUrl}/api/initiate-call`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
