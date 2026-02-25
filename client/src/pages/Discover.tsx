@@ -165,6 +165,7 @@ export const Discover: React.FC = () => {
                             event: 'match_request',
                             payload: {
                                 fromSessionId: sessionId,
+                                fromUserId: currentUser?.id,
                                 toSessionId: payload.sessionId,
                                 channelName: `discover_room_${sortedIds[0]}_${sortedIds[1]}`
                             }
@@ -174,16 +175,25 @@ export const Discover: React.FC = () => {
             })
             .on('broadcast', { event: 'match_request' }, ({ payload }) => {
                 if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
+                    console.log('[Matchmaking] Match requested by:', payload.fromUserId);
+                    setPartnerId(payload.fromUserId);
                     channel.send({
                         type: 'broadcast',
                         event: 'match_accept',
-                        payload: { sessionId, toSessionId: payload.fromSessionId, channelName: payload.channelName }
+                        payload: {
+                            sessionId,
+                            userId: currentUser?.id,
+                            toSessionId: payload.fromSessionId,
+                            channelName: payload.channelName
+                        }
                     });
                     connectToStranger(mode as any, payload.channelName, false);
                 }
             })
             .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
                 if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
+                    console.log('[Matchmaking] Match accepted by:', payload.userId);
+                    setPartnerId(payload.userId);
                     connectToStranger(mode as any, payload.channelName, true);
                 }
             })
@@ -192,7 +202,11 @@ export const Discover: React.FC = () => {
                 if (status === 'SUBSCRIBED') {
                     const interval = setInterval(() => {
                         if (isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
-                            channel.send({ type: 'broadcast', event: 'match_searching', payload: { sessionId } });
+                            channel.send({
+                                type: 'broadcast',
+                                event: 'match_searching',
+                                payload: { sessionId, userId: currentUser?.id }
+                            });
                         } else {
                             clearInterval(interval);
                         }
