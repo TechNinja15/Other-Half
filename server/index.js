@@ -21,6 +21,8 @@ const corsOptions = {
     'https://othrhalff.in',
     'https://www.othrhalff.in',
     'https://othrhalff.vercel.app',
+    'https://otherhalf.vercel.app',
+    'https://www.otherhalf.vercel.app',
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
