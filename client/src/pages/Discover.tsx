@@ -26,6 +26,7 @@ export const Discover: React.FC = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [messages, setMessages] = useState<{ sender: string, text: string }[]>([]);
     const [inputText, setInputText] = useState('');
+    const [mobileView, setMobileView] = useState<'video' | 'chat'>('video');
 
     // WebRTC State
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -657,8 +658,29 @@ export const Discover: React.FC = () => {
     return (
         <div className="h-full w-full bg-black flex flex-col md:flex-row overflow-hidden text-white font-sans">
 
+            {/* Mobile View Toggle */}
+            <div className="md:hidden flex bg-gray-900 border-b border-white/5 p-2 gap-2 sticky top-0 z-[60]">
+                <button
+                    onClick={() => setMobileView('video')}
+                    className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${mobileView === 'video' ? 'bg-neon/10 text-neon border border-neon/20 shadow-[0_0_15px_rgba(255,0,127,0.1)]' : 'text-gray-500'}`}
+                >
+                    <VideoIcon size={18} />
+                    Video
+                </button>
+                <button
+                    onClick={() => setMobileView('chat')}
+                    className={`flex-1 py-3 rounded-xl flex items-center justify-center gap-2 font-bold transition-all ${mobileView === 'chat' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]' : 'text-gray-500'}`}
+                >
+                    <MessageCircle size={18} />
+                    Chat
+                    {messages.length > 0 && !isConnected && (
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    )}
+                </button>
+            </div>
+
             {/* Video Section */}
-            <div className={`flex-[3] relative bg-gray-900/50 flex flex-col p-4 gap-4 transition-all duration-500 ${chatMode === 'text' ? 'hidden md:flex opacity-20 pointer-events-none grayscale' : ''}`}>
+            <div className={`flex-[3] relative bg-gray-900/50 flex flex-col p-4 gap-4 transition-all duration-500 ${mobileView === 'video' ? 'flex' : 'hidden'} md:flex ${chatMode === 'text' ? 'opacity-20 pointer-events-none grayscale' : ''}`}>
 
                 {/* Remote Video (Stranger) */}
                 <div className="flex-1 relative rounded-3xl overflow-hidden border-2 border-white/5 bg-black shadow-2xl min-h-[300px]">
@@ -734,12 +756,12 @@ export const Discover: React.FC = () => {
 
                 {/* Action Bar (Bottom Mobile) */}
                 {(isConnected || isSearching) && (
-                    <div className="flex gap-4 z-30">
+                    <div className="flex flex-wrap md:flex-nowrap gap-3 md:gap-4 z-30 mt-auto md:mt-2">
                         {isConnected && (
                             <>
                                 <button
                                     onClick={handleNext}
-                                    className="flex-1 py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-white/10 group"
+                                    className="flex-[2] py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-white/10 group min-w-[200px]"
                                 >
                                     <SkipForward className="group-hover:translate-x-1 transition-transform" />
                                     Next Stranger
@@ -748,7 +770,7 @@ export const Discover: React.FC = () => {
                                 <button
                                     onClick={handleLike}
                                     disabled={hasLiked}
-                                    className={`px-6 py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold ${hasLiked
+                                    className={`flex-1 px-6 py-4 rounded-2xl transition-all border flex items-center justify-center gap-2 font-bold min-w-[120px] ${hasLiked
                                         ? 'bg-red-500 text-white border-red-500'
                                         : 'bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500 hover:text-white'
                                         }`}
@@ -761,7 +783,7 @@ export const Discover: React.FC = () => {
 
                         <button
                             onClick={stopConnection}
-                            className="px-6 py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30"
+                            className="flex-1 md:flex-none px-6 py-4 bg-gray-500/10 hover:bg-gray-500 text-gray-500 hover:text-white font-bold rounded-2xl transition-all border border-gray-500/30 min-w-[100px]"
                         >
                             {isConnected ? 'Stop' : 'Cancel'}
                         </button>
@@ -771,7 +793,7 @@ export const Discover: React.FC = () => {
             </div>
 
             {/* Chat Section */}
-            <div className="flex-[2] h-full bg-black border-l border-white/5 flex flex-col">
+            <div className={`flex-[2] h-full bg-black border-l border-white/5 flex flex-col ${mobileView === 'chat' ? 'flex' : 'hidden'} md:flex`}>
 
                 {/* Chat Header */}
                 <div className="p-4 border-b border-white/5 flex items-center justify-between">
@@ -858,19 +880,19 @@ export const Discover: React.FC = () => {
                         <div className="relative z-10">
                             <Sparkles className="w-24 h-24 text-neon mx-auto mb-6 animate-bounce drop-shadow-[0_0_30px_rgba(255,0,127,0.8)]" />
 
-                            <h2 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon to-blue-400 uppercase tracking-tighter mb-8 italic leading-none">
+                            <h2 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-neon to-blue-400 uppercase tracking-tighter mb-8 italic leading-none">
                                 It's a Match!
                             </h2>
 
-                            <div className="flex items-center justify-center gap-8 mb-12">
-                                <div className="text-right">
+                            <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 mb-12">
+                                <div className="text-center md:text-right">
                                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">You</p>
-                                    <p className="text-3xl font-black text-white">{matchReveal.myName}</p>
+                                    <p className="text-2xl md:text-3xl font-black text-white">{matchReveal.myName}</p>
                                 </div>
-                                <div className="h-16 w-[1px] bg-gradient-to-b from-transparent via-white/40 to-transparent"></div>
-                                <div className="text-left">
+                                <div className="h-[1px] md:h-16 w-16 md:w-[1px] bg-gradient-to-r md:bg-gradient-to-b from-transparent via-white/40 to-transparent"></div>
+                                <div className="text-center md:text-left">
                                     <p className="text-[10px] font-bold text-neon uppercase tracking-widest mb-1">Matched With</p>
-                                    <p className="text-3xl font-black text-white">{matchReveal.partnerName}</p>
+                                    <p className="text-2xl md:text-3xl font-black text-white">{matchReveal.partnerName}</p>
                                 </div>
                             </div>
 
