@@ -148,13 +148,9 @@ export const Home: React.FC = () => {
                 preloadImages(mappedProfiles.slice(0, 5));
 
                 // Cache the data safely
-                try {
-                    sessionStorage.setItem(PROFILES_CACHE_KEY, JSON.stringify(mappedProfiles));
-                    sessionStorage.setItem(CACHE_EXPIRY_KEY, (Date.now() + CACHE_DURATION).toString());
-                } catch (e) {
-                    console.warn('Failed to cache profiles:', e);
-                    // If quota exceeded, we just don't cache. No crash.
-                }
+                safeSetItem(PROFILES_CACHE_KEY, JSON.stringify(mappedProfiles));
+                sessionStorage.setItem(CACHE_EXPIRY_KEY, (Date.now() + CACHE_DURATION).toString());
+
             }
         } catch (err) {
             console.error('Unexpected error:', err);

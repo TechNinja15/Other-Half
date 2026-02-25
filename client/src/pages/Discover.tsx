@@ -176,7 +176,11 @@ export const Discover: React.FC = () => {
             .on('broadcast', { event: 'match_request' }, ({ payload }) => {
                 if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
                     console.log('[Matchmaking] Match requested by:', payload.fromUserId);
-                    setPartnerId(payload.fromUserId);
+                    if (payload.fromUserId) {
+                        setPartnerId(payload.fromUserId);
+                    } else {
+                        console.error('[Matchmaking] match_request missing fromUserId!');
+                    }
                     channel.send({
                         type: 'broadcast',
                         event: 'match_accept',
@@ -193,7 +197,11 @@ export const Discover: React.FC = () => {
             .on('broadcast', { event: 'match_accept' }, ({ payload }) => {
                 if (payload.toSessionId === sessionId && isSearchingRef.current && !isConnectedRef.current && !isConnectingRef.current) {
                     console.log('[Matchmaking] Match accepted by:', payload.userId);
-                    setPartnerId(payload.userId);
+                    if (payload.userId) {
+                        setPartnerId(payload.userId);
+                    } else {
+                        console.error('[Matchmaking] match_accept missing userId!');
+                    }
                     connectToStranger(mode as any, payload.channelName, true);
                 }
             })
@@ -390,10 +398,20 @@ export const Discover: React.FC = () => {
     };
 
     const handleLike = async () => {
-        if (!currentUser || !partnerId || hasLiked) return;
+        if (!currentUser || !partnerId || hasLiked) {
+            console.warn('[Like] Aborting: Missing state', {
+                hasCurrentUser: !!currentUser,
+                partnerId: partnerId,
+                hasLiked
+            });
+            if (!partnerId && isConnected) {
+                showToast('Still identifying partner... wait a second.', 'info');
+            }
+            return;
+        }
 
         try {
-            console.log(`[Like] Action received: ${currentUser.id} -> ${partnerId} (Room: ${activeChannelNameRef.current})`);
+            console.log(`[Like] Action received: ${currentUser.id} -> ${partnerId}`);
             setHasLiked(true);
 
             const apiUrl = import.meta.env.VITE_API_URL;
