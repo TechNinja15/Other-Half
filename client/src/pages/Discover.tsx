@@ -59,6 +59,21 @@ export const Discover: React.FC = () => {
         hasLikedPartnerRef.current = false; // Reset whenever partner changes
     }, [partnerId]);
 
+    // Signal Navbar hiding when connected on mobile
+    useEffect(() => {
+        const signalNavbar = (hidden: boolean) => {
+            window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: hidden }));
+        };
+
+        if (isConnected) {
+            signalNavbar(true);
+        } else {
+            signalNavbar(false);
+        }
+
+        return () => signalNavbar(false); // Reset on unmount
+    }, [isConnected]);
+
     // Re-sync lobby when currentUser becomes available
     useEffect(() => {
         if (currentUser?.id && socketRef.current?.connected && isSearchingRef.current) {
@@ -656,7 +671,7 @@ export const Discover: React.FC = () => {
     };
 
     return (
-        <div className="h-[100dvh] w-full bg-black flex flex-col md:flex-row overflow-hidden text-white font-sans">
+        <div className={`h-[100dvh] w-full bg-black flex flex-col md:flex-row overflow-hidden text-white font-sans ${!isConnected ? 'pb-20 md:pb-0' : ''}`}>
 
             {/* Mobile View Toggle */}
             <div className="md:hidden flex bg-gray-900 border-b border-white/5 p-2 gap-2 sticky top-0 z-[60]">

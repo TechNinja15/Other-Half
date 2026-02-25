@@ -15,6 +15,17 @@ export const AppLayout: React.FC = () => {
   // State for Badges
   // const [unreadCount, setUnreadCount] = useState(0); // Moved to Context
   const [matchCount, setMatchCount] = useState(0);
+  const [isNavbarHiddenBySignal, setIsNavbarHiddenBySignal] = useState(false);
+
+  // Custom event listener for hiding navbar
+  useEffect(() => {
+    const handleSetNavbarHidden = (e: any) => {
+      setIsNavbarHiddenBySignal(!!e.detail);
+    };
+
+    window.addEventListener('set-navbar-hidden', handleSetNavbarHidden);
+    return () => window.removeEventListener('set-navbar-hidden', handleSetNavbarHidden);
+  }, []);
 
   // Fetch Badge Counts from Supabase
   useEffect(() => {
@@ -57,7 +68,7 @@ export const AppLayout: React.FC = () => {
   const isActive = (path: string) => location.pathname === path;
 
   const showStars = ['/home', '/matches', '/notifications', '/confessions'].includes(location.pathname) ||
-    location.pathname.startsWith('/chat/');
+    location.pathname.startsWith('/chat');
 
   const navItems = [
     { path: '/home', icon: Search, label: 'Discover' },
@@ -195,12 +206,12 @@ export const AppLayout: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col relative min-w-0 bg-black">
         {showStars && <StarField />}
-        <div className={`flex-1 overflow-hidden relative w-full h-full z-10 bg-transparent ${!location.pathname.includes('/chat/') ? 'pb-20 md:pb-0' : ''}`}>
+        <div className={`flex-1 overflow-hidden relative w-full h-full z-10 bg-transparent ${(!location.pathname.includes('/chat') && !isNavbarHiddenBySignal) ? 'pb-20 md:pb-0' : ''}`}>
           <Outlet />
         </div>
 
         {/* Mobile Bottom Nav */}
-        {!location.pathname.includes('/chat/') && (
+        {!location.pathname.includes('/chat') && !isNavbarHiddenBySignal && (
           <nav className="md:hidden h-20 bg-black/90 backdrop-blur border-t border-gray-900 flex justify-around items-center px-2 z-40 fixed bottom-0 left-0 right-0 pb-safe">
             <button onClick={() => navigate('/home')} className={`p-2 flex flex-col items-center gap-1 ${isActive('/home') ? 'text-neon' : 'text-gray-600'}`}>
               <div className={`p-1 rounded-xl ${isActive('/home') ? 'bg-neon/10' : ''}`}>
