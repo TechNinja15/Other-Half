@@ -727,7 +727,7 @@ export const Discover: React.FC = () => {
 
                 {/* Remote Video (Stranger) */}
                 <div className="flex-1 relative md:relative rounded-none md:rounded-3xl overflow-hidden border-0 md:border-2 border-white/5 bg-black shadow-2xl min-h-0 md:min-h-[300px] absolute inset-0 md:inset-auto z-0 md:z-10">
-                    <video id="remote-video-discover" autoPlay playsInline className="w-full h-full object-cover" />
+                    <video id="remote-video-discover" autoPlay playsInline className="w-full h-full object-cover mirror-self" />
 
                     {!remoteStream && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/80 backdrop-blur-sm z-10 p-6 text-center">
@@ -787,7 +787,7 @@ export const Discover: React.FC = () => {
 
                 {/* Local Video (Self) - PIP on mobile */}
                 <div className="h-[120px] md:h-1/2 w-auto aspect-[3/4] md:w-full md:aspect-auto absolute bottom-32 right-6 md:relative md:bottom-auto md:right-auto rounded-2xl md:rounded-3xl overflow-hidden border-2 border-white/20 md:border-neon/30 bg-black shadow-2xl group shrink-0 z-20 md:z-10">
-                    <video id="local-video-discover" autoPlay playsInline muted className="w-full h-full object-cover -scale-x-100" />
+                    <video id="local-video-discover" autoPlay playsInline muted className="w-full h-full object-cover mirror-self" />
 
                     {!localStream && !isSearching && !isConnected && (
                         <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50">
