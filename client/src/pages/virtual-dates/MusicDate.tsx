@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize, FileText, Image as ImageIcon } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Peer, { DataConnection } from 'peerjs';
 import { useAuth } from '../../context/AuthContext';
@@ -70,6 +70,11 @@ export const MusicDate = () => {
     const [partnerVolume, setPartnerVolume] = useState(1);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // Lyrics State
+    const [showLyrics, setShowLyrics] = useState(false);
+    const [lyricsData, setLyricsData] = useState<string | null>(null);
+    const [isLoadingLyrics, setIsLoadingLyrics] = useState(false);
 
     const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -294,6 +299,12 @@ export const MusicDate = () => {
         return () => clearInterval(interval);
     }, [isHost, isPlaying]);
 
+    // Reset lyrics when track changes
+    useEffect(() => {
+        setShowLyrics(false);
+        setLyricsData(null);
+    }, [currentTrack]);
+
     // Search JioSaavn API
     const handleSearch = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -311,6 +322,31 @@ export const MusicDate = () => {
             setError('Failed to search music. Try again.');
         } finally {
             setIsSearching(false);
+        }
+    };
+
+    const toggleLyrics = async () => {
+        if (!currentTrack) return;
+        if (!showLyrics) {
+            if (!lyricsData) {
+                setIsLoadingLyrics(true);
+                try {
+                    const res = await fetch(`https://saavnapi-nine.vercel.app/lyrics/?query=${currentTrack.id}`);
+                    const data = await res.json();
+                    if (data.status && data.lyrics) {
+                        setLyricsData(data.lyrics);
+                    } else {
+                        setLyricsData("<p class='text-gray-500 italic mt-8'>No lyrics available for this track.</p>");
+                    }
+                } catch (err) {
+                    setLyricsData("<p class='text-red-400 mt-8'>Error loading lyrics.</p>");
+                } finally {
+                    setIsLoadingLyrics(false);
+                }
+            }
+            setShowLyrics(true);
+        } else {
+            setShowLyrics(false);
         }
     };
 
@@ -531,7 +567,7 @@ export const MusicDate = () => {
 
             {/* Header / Nav Bar */}
             {!isFullscreen && (
-                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md z-20">
+                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md relative z-30">
                     <div className="flex items-center gap-4 border border-violet-500/30 bg-violet-500/10 px-4 py-1.5 rounded-full">
                         <span className="font-bold text-gray-200">{roomName}</span>
                         <div className="w-px h-4 bg-white/20" />
@@ -622,22 +658,46 @@ export const MusicDate = () => {
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 z-10 flex flex-col items-center justify-center">
                     {/* Currently Playing Card */}
                     <div className="w-full max-w-xl mx-auto bg-gray-900/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center transition-all mb-8">
-                        <div className="relative w-64 h-64 shrink-0 shadow-2xl rounded-3xl overflow-hidden shadow-violet-900/50 mb-8 border border-white/10">
-                            {currentTrack ? (
+                        <div className="relative w-64 h-64 shrink-0 shadow-2xl rounded-3xl overflow-hidden shadow-violet-900/50 mb-8 border border-white/10 group">
+                            {showLyrics ? (
+                                <div className="w-full h-full bg-gray-950/80 backdrop-blur-3xl p-4 overflow-y-auto custom-scrollbar flex flex-col items-center">
+                                    {isLoadingLyrics ? (
+                                        <div className="flex-1 flex items-center justify-center">
+                                            <Loader className="w-6 h-6 text-violet-500 animate-spin" />
+                                        </div>
+                                    ) : (
+                                        <div
+                                            className="text-xs md:text-sm text-gray-300 text-center leading-loose pb-12 mt-4 font-mono w-full px-2"
+                                            dangerouslySetInnerHTML={{ __html: lyricsData || '' }}
+                                        />
+                                    )}
+                                </div>
+                            ) : currentTrack ? (
                                 <img src={currentTrack.image.replace('150x150', '500x500')} alt={currentTrack.song} className="w-full h-full object-cover" />
                             ) : (
                                 <div className="w-full h-full bg-gray-800 flex items-center justify-center">
                                     <Music className="w-16 h-16 text-gray-600" />
                                 </div>
                             )}
-                            {isPlaying && (
-                                <div className="absolute inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+
+                            {isPlaying && !showLyrics && (
+                                <div className="absolute inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                     <div className="flex gap-1.5 h-8 items-end">
                                         {[...Array(5)].map((_, i) => (
                                             <div key={i} className="w-1.5 bg-neon rounded-full animate-pulse" style={{ height: `${Math.random() * 100}%`, animationDelay: `${i * 0.1}s` }} />
                                         ))}
                                     </div>
                                 </div>
+                            )}
+
+                            {currentTrack && (
+                                <button
+                                    onClick={toggleLyrics}
+                                    className="absolute bottom-3 right-3 bg-black/70 hover:bg-black backdrop-blur-md p-2 rounded-xl text-white shadow-lg transition-transform hover:scale-105 active:scale-95 border border-white/10 z-20"
+                                    title={showLyrics ? "Show Album Art" : "Show Lyrics"}
+                                >
+                                    {showLyrics ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                                </button>
                             )}
                         </div>
 
