@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize, FileText, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize, FileText, Image as ImageIcon, SkipForward } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Peer, { DataConnection } from 'peerjs';
 import { useAuth } from '../../context/AuthContext';
@@ -353,12 +353,16 @@ export const MusicDate = () => {
     const playSelectedTrack = (track: Track) => {
         setCurrentTrack(track);
         setIsPlaying(true);
+        if (audioRef.current) {
+            audioRef.current.src = track.media_url;
+            audioRef.current.play().catch(e => console.error("Audio play error", e));
+        }
         broadcastSync('track', { payload: track });
         broadcastSync('play');
     };
 
-    const handleTrackSelect = (track: Track) => {
-        if (!currentTrack && isHost) {
+    const handleTrackSelect = (track: Track, forcePlay: boolean = false) => {
+        if (isHost && (forcePlay || !currentTrack)) {
             playSelectedTrack(track);
         } else {
             // Add to queue for everyone
@@ -382,10 +386,18 @@ export const MusicDate = () => {
         }
     };
 
+    const handleSkip = () => {
+        if (isHost) handleSongEnded();
+    };
+
     const handlePlayPause = () => {
         if (!currentTrack) return;
         const newPlayingState = !isPlaying;
         setIsPlaying(newPlayingState);
+        if (audioRef.current) {
+            if (newPlayingState) audioRef.current.play().catch(e => console.error("Audio play error", e));
+            else audioRef.current.pause();
+        }
         broadcastSync(newPlayingState ? 'play' : 'pause');
     };
 
@@ -729,6 +741,14 @@ export const MusicDate = () => {
                                     >
                                         {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
                                     </button>
+                                    <button
+                                        onClick={handleSkip}
+                                        disabled={!isHost || !currentTrack}
+                                        className="w-12 h-12 flex items-center justify-center bg-white/10 text-white rounded-full hover:bg-white/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/5"
+                                        title="Skip to next in queue"
+                                    >
+                                        <SkipForward className="w-5 h-5 fill-current" />
+                                    </button>
                                 </div>
                                 {!isHost && <p className="mt-4 text-xs text-gray-500">Only host can skip tracks or control playback progress.</p>}
                             </div>
@@ -758,13 +778,13 @@ export const MusicDate = () => {
                                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Search Results</h3>
                                     <div className="space-y-1">
                                         {searchResults.map((track) => (
-                                            <div key={track.id} onClick={() => handleTrackSelect(track)} className="flex items-center gap-3 hover:bg-white/5 p-2 rounded-xl cursor-pointer transition-colors group">
+                                            <div key={track.id} onClick={() => handleTrackSelect(track, true)} className="flex items-center gap-3 hover:bg-white/5 p-2 rounded-xl cursor-pointer transition-colors group">
                                                 <img src={track.image} alt={track.song} className="w-10 h-10 rounded-md object-cover" />
                                                 <div className="flex-1 min-w-0">
                                                     <h4 className="text-white text-sm font-bold truncate group-hover:text-violet-300">{track.song}</h4>
                                                     <p className="text-gray-400 text-xs truncate">{track.singers}</p>
                                                 </div>
-                                                <button className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                <button onClick={(e) => { e.stopPropagation(); handleTrackSelect(track, false); }} className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                                                     <PlusCircle className="w-3 h-3" />
                                                 </button>
                                             </div>
