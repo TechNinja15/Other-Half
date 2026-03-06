@@ -56,8 +56,15 @@ export const MusicDate = () => {
     const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
+    const [queue, setQueue] = useState<Track[]>([]);
 
     const audioRef = useRef<HTMLAudioElement>(null);
+
+    // Draggable Cams State
+    const [camPositions, setCamPositions] = useState<{ [key: string]: { x: number, y: number } }>({});
+    const dragInfo = useRef<{ id: string | null, startX: number, startY: number, initialX: number, initialY: number }>({
+        id: null, startX: 0, startY: 0, initialX: 0, initialY: 0
+    });
 
     // Peer & WebRTC State
     const [myPeerId, setMyPeerId] = useState<string>('');
@@ -83,10 +90,12 @@ export const MusicDate = () => {
     // References for callbacks
     const currentTrackRef = useRef(currentTrack);
     const isPlayingRef = useRef(isPlaying);
+    const queueRef = useRef(queue);
     useEffect(() => {
         currentTrackRef.current = currentTrack;
         isPlayingRef.current = isPlaying;
-    }, [currentTrack, isPlaying]);
+        queueRef.current = queue;
+    }, [currentTrack, isPlaying, queue]);
 
     // Initialize Peer
     useEffect(() => {
@@ -115,12 +124,6 @@ export const MusicDate = () => {
 
                     peer.on('open', (id) => {
                         setMyPeerId(id);
-                        if (isHost) {
-                            analytics.virtualDateStart('Music Jam');
-                        } else {
-                            analytics.virtualDateJoin();
-                            connectToPeer(roomCode, stream, peer);
-                        }
                     });
 
                     peer.on('call', (call) => {
@@ -134,6 +137,9 @@ export const MusicDate = () => {
                     peer.on('connection', setupDataConnection);
                     peerInstance.current = peer;
 
+                    if (!isHost) {
+                        connectToPeer(roomCode, stream, peer);
+                    }
                 } catch (err: any) {
                     setError(`System Error: ${err.message}`);
                 }
@@ -166,6 +172,7 @@ export const MusicDate = () => {
             conn.send({ type: 'IDENTITY', payload: { name: displayName } });
 
             if (isHost) {
+                conn.send({ type: 'SYNC_PLAYER', action: 'queue_sync', payload: queueRef.current });
                 if (currentTrackRef.current) {
                     conn.send({ type: 'SYNC_PLAYER', action: 'track', payload: currentTrackRef.current });
                     if (isPlayingRef.current) {
@@ -203,6 +210,10 @@ export const MusicDate = () => {
             } else if (data.action === 'time_update' && audioRef.current) {
                 const diff = Math.abs(audioRef.current.currentTime - data.time);
                 if (diff > 1.5) audioRef.current.currentTime = data.time;
+            } else if (data.action === 'queue_add') {
+                setQueue(prev => [...prev, data.payload]);
+            } else if (data.action === 'queue_sync') {
+                setQueue(data.payload);
             }
         }
     };
@@ -214,7 +225,7 @@ export const MusicDate = () => {
     };
 
     const broadcastSync = (action: string, payload: any = {}) => {
-        if (!isHost) return;
+        if (!isHost && action !== 'queue_add') return;
         broadcastData({ type: 'SYNC_PLAYER', action, ...payload });
     };
 
@@ -266,6 +277,31 @@ export const MusicDate = () => {
         setIsPlaying(true);
         broadcastSync('track', { payload: track });
         broadcastSync('play');
+    };
+
+    const handleTrackSelect = (track: Track) => {
+        if (!currentTrack && isHost) {
+            playSelectedTrack(track);
+        } else {
+            // Add to queue for everyone
+            broadcastSync('queue_add', { payload: track });
+            setQueue(prev => [...prev, track]);
+        }
+    };
+
+    const handleSongEnded = () => {
+        if (isHost) {
+            if (queueRef.current.length > 0) {
+                const nextTrack = queueRef.current[0];
+                const newQueue = queueRef.current.slice(1);
+                setQueue(newQueue);
+                broadcastSync('queue_sync', { payload: newQueue });
+                playSelectedTrack(nextTrack);
+            } else {
+                setIsPlaying(false);
+                broadcastSync('pause');
+            }
+        }
     };
 
     const handlePlayPause = () => {
@@ -335,6 +371,32 @@ export const MusicDate = () => {
             myStream.getVideoTracks().forEach(t => t.enabled = !t.enabled);
             setIsVideoOff(!isVideoOff);
         }
+    };
+
+    // Draggable Cam logic
+    const handleCamMouseDown = (e: React.MouseEvent, id: string) => {
+        e.preventDefault();
+        const pos = camPositions[id] || { x: 0, y: 0 };
+        dragInfo.current = { id, startX: e.clientX, startY: e.clientY, initialX: pos.x, initialY: pos.y };
+
+        const handleMouseMove = (mvEvent: MouseEvent) => {
+            if (!dragInfo.current.id) return;
+            const dx = mvEvent.clientX - dragInfo.current.startX;
+            const dy = mvEvent.clientY - dragInfo.current.startY;
+            setCamPositions(prev => ({
+                ...prev,
+                [dragInfo.current.id as string]: { x: dragInfo.current.initialX + dx, y: dragInfo.current.initialY + dy }
+            }));
+        };
+
+        const handleMouseUp = () => {
+            dragInfo.current.id = null;
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
     };
 
     const handleSendMessage = (e: React.FormEvent) => {
@@ -423,7 +485,7 @@ export const MusicDate = () => {
 
     return (
         <div className="flex flex-col h-full w-full bg-[#050510] text-white overflow-hidden font-sans relative">
-            <audio ref={audioRef} src={currentTrack?.media_url} onTimeUpdate={handleTimeUpdate} onEnded={() => { setIsPlaying(false); broadcastSync('pause'); }} />
+            <audio ref={audioRef} src={currentTrack?.media_url} onTimeUpdate={handleTimeUpdate} onEnded={handleSongEnded} />
 
             {/* Header */}
             <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md z-20">
@@ -444,110 +506,132 @@ export const MusicDate = () => {
                 </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
-                {/* Main Content */}
-                <div className="flex-1 flex flex-col relative w-full">
+            <div className="flex-1 flex overflow-hidden relative">
 
-                    {/* Visualizer Background */}
-                    <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none overflow-hidden">
-                        <div className={`w-[800px] h-[800px] rounded-full bg-gradient-to-tr from-violet-600 to-fuchsia-600 blur-[150px] transition-transform duration-[10s] ${isPlaying ? 'scale-110 animate-pulse' : 'scale-90 opacity-10'}`} />
-                    </div>
+                {/* Visualizer Background */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none overflow-hidden">
+                    <div className={`w-[800px] h-[800px] rounded-full bg-gradient-to-tr from-violet-600 to-fuchsia-600 blur-[150px] transition-transform duration-[10s] ${isPlaying ? 'scale-110 animate-pulse' : 'scale-90 opacity-10'}`} />
+                </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 md:p-8 z-10 flex flex-col h-full">
-                        {/* Currently Playing Card */}
-                        <div className="w-full max-w-2xl mx-auto bg-gray-900/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 md:p-10 shadow-2xl flex flex-col md:flex-row gap-8 items-center md:items-start mb-8 transition-all">
-                            <div className="relative w-48 h-48 md:w-64 md:h-64 shrink-0 shadow-2xl rounded-2xl overflow-hidden shadow-violet-900/50">
-                                {currentTrack ? (
-                                    <img src={currentTrack.image.replace('150x150', '500x500')} alt={currentTrack.song} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full bg-gray-800 flex items-center justify-center border border-gray-700">
-                                        <Music className="w-16 h-16 text-gray-600" />
-                                    </div>
-                                )}
-                                {isPlaying && (
-                                    <div className="absolute inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                                        <div className="flex gap-1.5 h-8 items-end">
-                                            {[...Array(5)].map((_, i) => (
-                                                <div key={i} className="w-1.5 bg-neon rounded-full animate-pulse" style={{ height: `${Math.random() * 100}%`, animationDelay: `${i * 0.1}s` }} />
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex-1 w-full flex flex-col items-center md:items-start text-center md:text-left">
-                                <h1 className="text-3xl md:text-5xl font-black text-white mb-2 line-clamp-2">{currentTrack?.song || 'Select a track'}</h1>
-                                <p className="text-lg text-violet-300 mb-8">{currentTrack?.singers || 'JioSaavnAPI Jam'}</p>
-
-                                {/* Playback Controls */}
-                                <div className="w-full mt-auto">
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max={currentTrack ? Number(currentTrack.duration) : 100}
-                                        value={currentTime}
-                                        onChange={handleProgressChange}
-                                        disabled={!isHost || !currentTrack}
-                                        className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500 mb-2"
-                                    />
-                                    <div className="flex justify-between text-xs text-gray-400 font-mono">
-                                        <span>{formatTime(currentTime)}</span>
-                                        <span>{currentTrack ? formatTime(Number(currentTrack.duration)) : '0:00'}</span>
-                                    </div>
-
-                                    <div className="flex items-center justify-center gap-6 mt-6">
-                                        <button
-                                            onClick={handlePlayPause}
-                                            disabled={!isHost || !currentTrack}
-                                            className="w-16 h-16 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-xl shadow-white/10"
-                                        >
-                                            {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
-                                        </button>
-                                        {!isHost && <p className="absolute bottom-4 text-xs text-gray-500">Only host can control playback</p>}
+                {/* Left Side: Now Playing */}
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 z-10 flex flex-col items-center justify-center">
+                    {/* Currently Playing Card */}
+                    <div className="w-full max-w-xl mx-auto bg-gray-900/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center transition-all mb-8">
+                        <div className="relative w-64 h-64 shrink-0 shadow-2xl rounded-3xl overflow-hidden shadow-violet-900/50 mb-8 border border-white/10">
+                            {currentTrack ? (
+                                <img src={currentTrack.image.replace('150x150', '500x500')} alt={currentTrack.song} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-gray-800 flex items-center justify-center">
+                                    <Music className="w-16 h-16 text-gray-600" />
+                                </div>
+                            )}
+                            {isPlaying && (
+                                <div className="absolute inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                                    <div className="flex gap-1.5 h-8 items-end">
+                                        {[...Array(5)].map((_, i) => (
+                                            <div key={i} className="w-1.5 bg-neon rounded-full animate-pulse" style={{ height: `${Math.random() * 100}%`, animationDelay: `${i * 0.1}s` }} />
+                                        ))}
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
 
-                        {/* Search Section (Host Only) */}
-                        {isHost && (
-                            <div className="w-full max-w-2xl mx-auto flex-1 flex flex-col min-h-0">
-                                <form onSubmit={handleSearch} className="relative mb-6">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                                    <input
-                                        type="text"
-                                        value={searchQuery}
-                                        onChange={e => setSearchQuery(e.target.value)}
-                                        placeholder="Search for a song..."
-                                        className="w-full bg-gray-900/60 backdrop-blur-md border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-gray-500 focus:outline-none focus:border-violet-500 shadow-xl"
-                                    />
-                                </form>
+                        <div className="w-full flex flex-col items-center">
+                            <h1 className="text-3xl font-black text-white mb-2 line-clamp-2">{currentTrack?.song || 'Select a track'}</h1>
+                            <p className="text-lg text-violet-300 mb-8">{currentTrack?.singers || 'JioSaavnAPI Jam'}</p>
 
-                                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pb-20">
-                                    {isSearching && (
-                                        <div className="flex justify-center p-8"><Loader className="w-8 h-8 text-violet-500 animate-spin" /></div>
-                                    )}
+                            {/* Playback Controls */}
+                            <div className="w-full mt-auto">
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={currentTrack ? Number(currentTrack.duration) : 100}
+                                    value={currentTime}
+                                    onChange={handleProgressChange}
+                                    disabled={!isHost || !currentTrack}
+                                    className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500 mb-2"
+                                />
+                                <div className="flex justify-between text-xs text-gray-400 font-mono">
+                                    <span>{formatTime(currentTime)}</span>
+                                    <span>{currentTrack ? formatTime(Number(currentTrack.duration)) : '0:00'}</span>
+                                </div>
+
+                                <div className="flex items-center justify-center gap-6 mt-6">
+                                    <button
+                                        onClick={handlePlayPause}
+                                        disabled={!isHost || !currentTrack}
+                                        className="w-16 h-16 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-xl shadow-white/10"
+                                    >
+                                        {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+                                    </button>
+                                </div>
+                                {!isHost && <p className="mt-4 text-xs text-gray-500">Only host can skip tracks or control playback progress.</p>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Panel: Search & Queue */}
+                <div className="w-96 border-l border-white/5 bg-black/40 backdrop-blur-md z-20 flex flex-col flex-shrink-0">
+                    <div className="p-4 border-b border-white/5 bg-gray-950/50">
+                        <form onSubmit={handleSearch} className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                placeholder="Search for a song..."
+                                className="w-full bg-gray-900/60 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors"
+                            />
+                        </form>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                        {searchResults.length > 0 && (
+                            <div className="mb-6">
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Search Results</h3>
+                                <div className="space-y-1">
                                     {searchResults.map((track) => (
-                                        <div key={track.id} onClick={() => playSelectedTrack(track)} className="flex items-center gap-4 bg-black/40 hover:bg-white/10 p-3 rounded-2xl cursor-pointer transition-colors border border-transparent hover:border-white/10 group">
-                                            <img src={track.image} alt={track.song} className="w-12 h-12 rounded-lg object-cover shadow-md" />
+                                        <div key={track.id} onClick={() => handleTrackSelect(track)} className="flex items-center gap-3 hover:bg-white/5 p-2 rounded-xl cursor-pointer transition-colors group">
+                                            <img src={track.image} alt={track.song} className="w-10 h-10 rounded-md object-cover" />
                                             <div className="flex-1 min-w-0">
-                                                <h4 className="text-white font-bold truncate group-hover:text-violet-300 transition-colors">{track.song}</h4>
-                                                <p className="text-gray-400 text-sm truncate">{track.singers}</p>
+                                                <h4 className="text-white text-sm font-bold truncate group-hover:text-violet-300">{track.song}</h4>
+                                                <p className="text-gray-400 text-xs truncate">{track.singers}</p>
                                             </div>
-                                            <button className="w-8 h-8 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <Play className="w-4 h-4 fill-current ml-0.5" />
+                                            <button className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                <PlusCircle className="w-3 h-3" />
                                             </button>
                                         </div>
                                     ))}
                                 </div>
                             </div>
                         )}
+
+                        <div>
+                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Up Next Queue ({queue.length})</h3>
+                            {queue.length === 0 ? (
+                                <p className="text-sm text-gray-600 px-2 italic">Queue is empty</p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {queue.map((track, idx) => (
+                                        <div key={`${track.id}-${idx}`} className="flex items-center gap-3 bg-white/5 p-2 rounded-xl border border-white/5">
+                                            <span className="text-xs text-gray-500 w-4 font-mono text-center">{idx + 1}</span>
+                                            <img src={track.image} alt={track.song} className="w-8 h-8 rounded-md object-cover" />
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="text-white text-sm font-medium truncate">{track.song}</h4>
+                                                <p className="text-gray-400 text-[10px] truncate">{track.singers}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Chat Panel */}
+                {/* Chat Panel - Absolutely Positioned if open */}
                 {showChat && (
-                    <div className="w-80 border-l border-white/5 bg-gray-950/80 backdrop-blur-xl flex flex-col z-30 shadow-2xl">
+                    <div className="absolute right-96 top-0 bottom-0 w-80 border-l border-white/5 bg-gray-950/95 backdrop-blur-2xl flex flex-col z-30 shadow-2xl transition-all">
                         <div className="h-14 border-b border-white/5 flex items-center justify-between px-4">
                             <span className="font-bold text-gray-300 flex items-center gap-2"><MessageSquare className="w-4 h-4 text-violet-400" /> Chat</span>
                             <button onClick={() => setShowChat(false)} className="text-gray-500 hover:text-white"><X className="w-4 h-4" /></button>
@@ -572,24 +656,39 @@ export const MusicDate = () => {
                 )}
             </div>
 
-            {/* Video Grids Overlay */}
-            <div className="absolute bottom-6 left-6 right-6 pointer-events-none flex items-end gap-4 z-40">
+            {/* Video Grids Overlay - Draggable Absolute Position */}
+            <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
                 {myStream && (
-                    <div className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl relative pointer-events-auto shadow-black/50">
+                    <div
+                        onMouseDown={(e) => handleCamMouseDown(e, 'me')}
+                        style={{
+                            transform: `translate(${camPositions['me']?.x || 24}px, ${camPositions['me']?.y || window.innerHeight - 180}px)`,
+                            position: 'absolute', top: 0, left: 0
+                        }}
+                        className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
+                    >
                         <StreamVideo stream={myStream} muted={true} mirrored={true} />
-                        <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center">
-                            <span className="text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md">You</span>
+                        <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center bg-black/40 backdrop-blur-md rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <span className="text-xs font-bold text-white">You</span>
                             <div className="flex gap-1">
-                                <button onClick={toggleMute} className={`p-1.5 rounded-md backdrop-blur-md ${isMuted ? 'bg-red-500/80 text-white' : 'bg-black/50 text-gray-300'}`}>{isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}</button>
-                                <button onClick={toggleVideo} className={`p-1.5 rounded-md backdrop-blur-md ${isVideoOff ? 'bg-red-500/80 text-white' : 'bg-black/50 text-gray-300'}`}>{isVideoOff ? <VideoOff className="w-3 h-3" /> : <Video className="w-3 h-3" />}</button>
+                                <button onMouseDown={e => e.stopPropagation()} onClick={toggleMute} className={`p-1 rounded-md ${isMuted ? 'text-red-400' : 'text-gray-300 hover:text-white'}`}>{isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}</button>
+                                <button onMouseDown={e => e.stopPropagation()} onClick={toggleVideo} className={`p-1 rounded-md ${isVideoOff ? 'text-red-400' : 'text-gray-300 hover:text-white'}`}>{isVideoOff ? <VideoOff className="w-3 h-3" /> : <Video className="w-3 h-3" />}</button>
                             </div>
                         </div>
                     </div>
                 )}
-                {peers.map(peer => (
-                    <div key={peer.peerId} className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl relative pointer-events-auto shadow-black/50">
+                {peers.map((peer, i) => (
+                    <div
+                        key={peer.peerId}
+                        onMouseDown={(e) => handleCamMouseDown(e, peer.peerId)}
+                        style={{
+                            transform: `translate(${camPositions[peer.peerId]?.x || 24 + ((i + 1) * 210)}px, ${camPositions[peer.peerId]?.y || window.innerHeight - 180}px)`,
+                            position: 'absolute', top: 0, left: 0
+                        }}
+                        className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
+                    >
                         <StreamVideo stream={peer.stream} mirrored={true} />
-                        <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md">{peerNames[peer.peerId] || 'Peer'}</span>
+                        <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">{peerNames[peer.peerId] || 'Peer'}</span>
                     </div>
                 ))}
             </div>
