@@ -769,7 +769,7 @@ export const MusicDate = () => {
                     <div
                         onMouseDown={(e) => handleCamMouseDown(e, 'me')}
                         style={{
-                            transform: `translate(${camPositions['me']?.x || 24}px, ${camPositions['me']?.y || window.innerHeight - 180}px)`,
+                            transform: `translate(${camPositions['me']?.x || 24}px, ${camPositions['me']?.y || 24}px)`,
                             position: 'absolute', top: 0, left: 0
                         }}
                         className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
@@ -789,7 +789,7 @@ export const MusicDate = () => {
                         key={peer.peerId}
                         onMouseDown={(e) => handleCamMouseDown(e, peer.peerId)}
                         style={{
-                            transform: `translate(${camPositions[peer.peerId]?.x || 24 + ((i + 1) * 210)}px, ${camPositions[peer.peerId]?.y || window.innerHeight - 180}px)`,
+                            transform: `translate(${camPositions[peer.peerId]?.x || 24}px, ${camPositions[peer.peerId]?.y || 24 + ((i + 1) * 140)}px)`,
                             position: 'absolute', top: 0, left: 0
                         }}
                         className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
