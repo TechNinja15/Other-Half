@@ -41,7 +41,7 @@ export default {
         },
         snap: {
           '0%': { transform: 'translateX(0) scale(1)' },
-          '50%': { transform: 'scale(1.2)' },
+          '50%': { transform: 'scale(1.2)' }, 
           '100%': { transform: 'translateX(0) scale(1)' },
         },
         shockwave: {
