@@ -723,101 +723,110 @@ export const MusicDate = () => {
                 </div>
 
                 {/* Left Side: Now Playing */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-8 z-10 flex flex-col items-center justify-center">
-                    {/* Currently Playing Card */}
-                    <div className="w-full max-w-xl mx-auto bg-gray-900/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center transition-all mb-8">
-                        <div className="relative w-64 h-64 shrink-0 shadow-2xl rounded-3xl overflow-hidden shadow-violet-900/50 mb-8 border border-white/10 group">
-                            {showLyrics ? (
-                                <div ref={lyricsContainerRef} className="w-full h-full bg-gray-950/80 backdrop-blur-3xl p-4 overflow-y-auto custom-scrollbar flex flex-col items-center scroll-smooth">
-                                    {isLoadingLyrics ? (
-                                        <div className="flex-1 flex items-center justify-center h-full">
-                                            <Loader className="w-6 h-6 text-violet-500 animate-spin" />
-                                        </div>
-                                    ) : lyricsData ? (
-                                        <div className="w-full text-center pb-12 mt-4 px-2 space-y-4 font-medium transition-all">
-                                            {lyricsData.map((line, idx) => (
-                                                <p key={idx} className={`transition-all duration-300 min-h-6 ${idx === activeLyricIndex ? 'text-white text-base scale-110 font-bold drop-shadow-[0_0_8px_rgba(139,92,246,0.8)]' : 'text-gray-500 text-sm'}`}>
-                                                    {line.text}
-                                                </p>
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 z-10 flex flex-col items-center justify-center relative">
+                    {showLyrics ? (
+                        <div ref={lyricsContainerRef} className="absolute inset-0 w-full h-full bg-[#050510]/95 backdrop-blur-3xl p-8 md:p-16 overflow-y-auto custom-scrollbar flex flex-col items-center scroll-smooth z-40">
+                            {isLoadingLyrics ? (
+                                <div className="flex-1 flex items-center justify-center h-full">
+                                    <Loader className="w-10 h-10 text-violet-500 animate-spin" />
+                                </div>
+                            ) : lyricsData ? (
+                                <div className="w-full max-w-5xl mx-auto text-center py-32 space-y-12 transition-all">
+                                    {lyricsData.map((line, idx) => (
+                                        <p key={idx} className={`transition-all duration-500 leading-tight ${idx === activeLyricIndex ? 'text-white text-4xl md:text-6xl lg:text-7xl font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'text-gray-600 text-2xl md:text-4xl font-bold opacity-50 hover:opacity-100 hover:text-gray-300'}`}>
+                                            {line.text}
+                                        </p>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div
+                                    className="text-lg md:text-2xl text-gray-300 text-center leading-loose pb-12 mt-4 font-mono w-full px-2 max-w-4xl mx-auto py-32"
+                                    dangerouslySetInnerHTML={{ __html: plainLyrics || '' }}
+                                />
+                            )}
+
+                            <button
+                                onClick={toggleLyrics}
+                                className="fixed top-8 right-8 bg-white/10 hover:bg-white/20 backdrop-blur-md p-4 rounded-full text-white shadow-2xl transition-transform hover:scale-105 active:scale-95 border border-white/20 z-50 mix-blend-difference"
+                                title="Hide Lyrics"
+                            >
+                                <ImageIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="w-full max-w-2xl mx-auto flex flex-col items-center text-center transition-all my-auto z-10">
+                            <div className="relative w-80 h-80 sm:w-96 sm:h-96 shrink-0 shadow-[0_0_60px_rgba(139,92,246,0.15)] rounded-[2.5rem] overflow-hidden mb-12 border border-white/5 group">
+                                {currentTrack ? (
+                                    <img src={currentTrack.image.replace('150x150', '500x500')} alt={currentTrack.song} className="w-full h-full object-cover transform transition-transform duration-700 group-hover:scale-105" />
+                                ) : (
+                                    <div className="w-full h-full bg-gray-900/50 backdrop-blur flex items-center justify-center">
+                                        <Music className="w-24 h-24 text-gray-700" />
+                                    </div>
+                                )}
+
+                                {isPlaying && (
+                                    <div className="absolute inset-0 bg-black/30 backdrop-blur-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                        <div className="flex gap-2.5 h-12 items-end">
+                                            {[...Array(5)].map((_, i) => (
+                                                <div key={i} className="w-2.5 bg-neon rounded-full animate-pulse shadow-[0_0_15px_#fff]" style={{ height: `${Math.random() * 100}%`, animationDelay: `${i * 0.1}s` }} />
                                             ))}
                                         </div>
-                                    ) : (
-                                        <div
-                                            className="text-xs md:text-sm text-gray-300 text-center leading-loose pb-12 mt-4 font-mono w-full px-2"
-                                            dangerouslySetInnerHTML={{ __html: plainLyrics || '' }}
-                                        />
-                                    )}
-                                </div>
-                            ) : currentTrack ? (
-                                <img src={currentTrack.image.replace('150x150', '500x500')} alt={currentTrack.song} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full bg-gray-800 flex items-center justify-center">
-                                    <Music className="w-16 h-16 text-gray-600" />
-                                </div>
-                            )}
-
-                            {isPlaying && !showLyrics && (
-                                <div className="absolute inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <div className="flex gap-1.5 h-8 items-end">
-                                        {[...Array(5)].map((_, i) => (
-                                            <div key={i} className="w-1.5 bg-neon rounded-full animate-pulse" style={{ height: `${Math.random() * 100}%`, animationDelay: `${i * 0.1}s` }} />
-                                        ))}
                                     </div>
-                                </div>
-                            )}
+                                )}
 
-                            {currentTrack && (
-                                <button
-                                    onClick={toggleLyrics}
-                                    className="absolute bottom-3 right-3 bg-black/70 hover:bg-black backdrop-blur-md p-2 rounded-xl text-white shadow-lg transition-transform hover:scale-105 active:scale-95 border border-white/10 z-20"
-                                    title={showLyrics ? "Show Album Art" : "Show Lyrics"}
-                                >
-                                    {showLyrics ? <ImageIcon className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-                                </button>
-                            )}
-                        </div>
-
-                        <div className="w-full flex flex-col items-center">
-                            <h1 className="text-3xl font-black text-white mb-2 line-clamp-2">{currentTrack?.song || 'Select a track'}</h1>
-                            <p className="text-lg text-violet-300 mb-8">{currentTrack?.singers || 'JioSaavnAPI Jam'}</p>
-
-                            {/* Playback Controls */}
-                            <div className="w-full mt-auto">
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max={currentTrack ? Number(currentTrack.duration) : 100}
-                                    value={currentTime}
-                                    onChange={handleProgressChange}
-                                    disabled={!isHost || !currentTrack}
-                                    className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500 mb-2"
-                                />
-                                <div className="flex justify-between text-xs text-gray-400 font-mono">
-                                    <span>{formatTime(currentTime)}</span>
-                                    <span>{currentTrack ? formatTime(Number(currentTrack.duration)) : '0:00'}</span>
-                                </div>
-
-                                <div className="flex items-center justify-center gap-6 mt-6">
+                                {currentTrack && (
                                     <button
-                                        onClick={handlePlayPause}
-                                        disabled={!isHost || !currentTrack}
-                                        className="w-16 h-16 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-xl shadow-white/10"
+                                        onClick={toggleLyrics}
+                                        className="absolute bottom-5 right-5 bg-black/60 hover:bg-black/80 backdrop-blur-md p-3.5 rounded-2xl text-white shadow-xl transition-all hover:scale-110 active:scale-95 border border-white/20 z-20 group/btn"
+                                        title="Show Lyrics"
                                     >
-                                        {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+                                        <FileText className="w-6 h-6 group-hover/btn:text-violet-400 transition-colors" />
                                     </button>
-                                    <button
-                                        onClick={handleSkip}
+                                )}
+                            </div>
+
+                            <div className="w-full flex flex-col items-center px-4">
+                                <h1 className="text-4xl sm:text-5xl font-black text-white mb-4 line-clamp-2 tracking-tight drop-shadow-xl">{currentTrack?.song || 'Select a track'}</h1>
+                                <p className="text-xl sm:text-2xl text-violet-300 mb-12 font-medium tracking-wide opacity-90">{currentTrack?.singers || 'JioSaavnAPI Jam'}</p>
+
+                                {/* Playback Controls */}
+                                <div className="w-full max-w-lg mt-auto">
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max={currentTrack ? Number(currentTrack.duration) : 100}
+                                        value={currentTime}
+                                        onChange={handleProgressChange}
                                         disabled={!isHost || !currentTrack}
-                                        className="w-12 h-12 flex items-center justify-center bg-white/10 text-white rounded-full hover:bg-white/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/5"
-                                        title="Skip to next in queue"
-                                    >
-                                        <SkipForward className="w-5 h-5 fill-current" />
-                                    </button>
+                                        className="w-full h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-violet-500 hover:accent-violet-400 transition-all mb-3"
+                                    />
+                                    <div className="flex justify-between text-sm text-gray-400 font-mono font-medium">
+                                        <span>{formatTime(currentTime)}</span>
+                                        <span>{currentTrack ? formatTime(Number(currentTrack.duration)) : '0:00'}</span>
+                                    </div>
+
+                                    <div className="flex items-center justify-center gap-8 mt-8">
+                                        <button
+                                            onClick={handlePlayPause}
+                                            disabled={!isHost || !currentTrack}
+                                            className="w-20 h-20 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed shadow-[0_0_30px_rgba(255,255,255,0.15)] hover:shadow-[0_0_40px_rgba(255,255,255,0.3)]"
+                                        >
+                                            {isPlaying ? <Pause className="w-10 h-10 fill-current" /> : <Play className="w-10 h-10 fill-current ml-2" />}
+                                        </button>
+                                        <button
+                                            onClick={handleSkip}
+                                            disabled={!isHost || !currentTrack}
+                                            className="w-14 h-14 flex items-center justify-center bg-white/10 text-white rounded-full hover:bg-white/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed border border-white/10 backdrop-blur-sm"
+                                            title="Skip to next in queue"
+                                        >
+                                            <SkipForward className="w-6 h-6 fill-current" />
+                                        </button>
+                                    </div>
+                                    {!isHost && <p className="mt-6 text-xs text-gray-500">Only host can skip tracks or control playback progress.</p>}
                                 </div>
-                                {!isHost && <p className="mt-4 text-xs text-gray-500">Only host can skip tracks or control playback progress.</p>}
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Right Panel: Search & Queue (Hidden in Fullscreen) */}
