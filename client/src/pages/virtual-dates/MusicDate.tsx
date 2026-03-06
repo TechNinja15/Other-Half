@@ -452,11 +452,9 @@ export const MusicDate = () => {
 
                 if (activeIdx !== activeLyricIndex && activeIdx !== -1) {
                     setActiveLyricIndex(activeIdx);
-                    if (lyricsContainerRef.current) {
-                        const activeEl = lyricsContainerRef.current.children[activeIdx] as HTMLElement;
-                        if (activeEl) {
-                            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
+                    const activeEl = document.getElementById(`lyric-${activeIdx}`);
+                    if (activeEl) {
+                        activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
                 }
             }
@@ -733,7 +731,7 @@ export const MusicDate = () => {
                             ) : lyricsData ? (
                                 <div className="w-full max-w-5xl mx-auto text-center py-32 space-y-12 transition-all">
                                     {lyricsData.map((line, idx) => (
-                                        <p key={idx} className={`transition-all duration-500 leading-tight ${idx === activeLyricIndex ? 'text-white text-4xl md:text-6xl lg:text-7xl font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'text-gray-600 text-2xl md:text-4xl font-bold opacity-50 hover:opacity-100 hover:text-gray-300'}`}>
+                                        <p key={idx} id={`lyric-${idx}`} className={`transition-all duration-500 leading-tight ${idx === activeLyricIndex ? 'text-white text-4xl md:text-6xl lg:text-7xl font-black drop-shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'text-gray-600 text-2xl md:text-4xl font-bold opacity-50 hover:opacity-100 hover:text-gray-300'}`}>
                                             {line.text}
                                         </p>
                                     ))}
