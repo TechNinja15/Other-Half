@@ -124,6 +124,12 @@ export const MusicDate = () => {
 
                     peer.on('open', (id) => {
                         setMyPeerId(id);
+                        if (isHost) {
+                            analytics.virtualDateStart('Music Jam');
+                        } else {
+                            analytics.virtualDateJoin();
+                            connectToPeer(roomCode, stream, peer);
+                        }
                     });
 
                     peer.on('call', (call) => {
@@ -136,10 +142,6 @@ export const MusicDate = () => {
 
                     peer.on('connection', setupDataConnection);
                     peerInstance.current = peer;
-
-                    if (!isHost) {
-                        connectToPeer(roomCode, stream, peer);
-                    }
                 } catch (err: any) {
                     setError(`System Error: ${err.message}`);
                 }
