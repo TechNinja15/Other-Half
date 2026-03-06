@@ -71,10 +71,15 @@ export const MusicDate = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    type LyricLine = { time: number; text: string };
+
     // Lyrics State
     const [showLyrics, setShowLyrics] = useState(false);
-    const [lyricsData, setLyricsData] = useState<string | null>(null);
+    const [lyricsData, setLyricsData] = useState<LyricLine[] | null>(null);
+    const [plainLyrics, setPlainLyrics] = useState<string | null>(null);
+    const [activeLyricIndex, setActiveLyricIndex] = useState(-1);
     const [isLoadingLyrics, setIsLoadingLyrics] = useState(false);
+    const lyricsContainerRef = useRef<HTMLDivElement>(null);
 
     const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -303,6 +308,8 @@ export const MusicDate = () => {
     useEffect(() => {
         setShowLyrics(false);
         setLyricsData(null);
+        setPlainLyrics(null);
+        setActiveLyricIndex(-1);
     }, [currentTrack]);
 
     // Search JioSaavn API
@@ -325,21 +332,48 @@ export const MusicDate = () => {
         }
     };
 
+    const parseLyrics = (lrcString: string) => {
+        const lines = lrcString.split('\n');
+        const lyricsList: LyricLine[] = [];
+        const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/;
+        for (const line of lines) {
+            const match = timeRegex.exec(line);
+            if (match) {
+                const minutes = parseInt(match[1]);
+                const seconds = parseInt(match[2]);
+                const ms = parseInt(match[3].padEnd(3, '0'));
+                const time = minutes * 60 + seconds + ms / 1000;
+                const text = line.replace(timeRegex, '').trim();
+                if (text) lyricsList.push({ time, text });
+            }
+        }
+        return lyricsList;
+    };
+
     const toggleLyrics = async () => {
         if (!currentTrack) return;
         if (!showLyrics) {
-            if (!lyricsData) {
+            if (!lyricsData && !plainLyrics) {
                 setIsLoadingLyrics(true);
                 try {
-                    const res = await fetch(`https://saavnapi-nine.vercel.app/lyrics/?query=${currentTrack.id}`);
+                    const q = encodeURIComponent(`${currentTrack.song} ${currentTrack.singers.split(',')[0]}`);
+                    const res = await fetch(`https://lrclib.net/api/search?q=${q}`);
                     const data = await res.json();
-                    if (data.status && data.lyrics) {
-                        setLyricsData(data.lyrics);
+
+                    if (data && data.length > 0) {
+                        const topHit = data[0];
+                        if (topHit.syncedLyrics) {
+                            setLyricsData(parseLyrics(topHit.syncedLyrics));
+                        } else if (topHit.plainLyrics) {
+                            setPlainLyrics(topHit.plainLyrics.replace(/\n/g, '<br>'));
+                        } else {
+                            setPlainLyrics("<p class='text-gray-500 italic mt-8'>No lyrics available for this track.</p>");
+                        }
                     } else {
-                        setLyricsData("<p class='text-gray-500 italic mt-8'>No lyrics available for this track.</p>");
+                        setPlainLyrics("<p class='text-gray-500 italic mt-8'>No lyrics available for this track.</p>");
                     }
                 } catch (err) {
-                    setLyricsData("<p class='text-red-400 mt-8'>Error loading lyrics.</p>");
+                    setPlainLyrics("<p class='text-red-400 mt-8'>Error loading lyrics.</p>");
                 } finally {
                     setIsLoadingLyrics(false);
                 }
@@ -403,7 +437,29 @@ export const MusicDate = () => {
 
     const handleTimeUpdate = () => {
         if (audioRef.current) {
-            setCurrentTime(audioRef.current.currentTime);
+            const time = audioRef.current.currentTime;
+            setCurrentTime(time);
+
+            if (showLyrics && lyricsData) {
+                let activeIdx = -1;
+                for (let i = 0; i < lyricsData.length; i++) {
+                    if (time >= lyricsData[i].time) {
+                        activeIdx = i;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (activeIdx !== activeLyricIndex && activeIdx !== -1) {
+                    setActiveLyricIndex(activeIdx);
+                    if (lyricsContainerRef.current) {
+                        const activeEl = lyricsContainerRef.current.children[activeIdx] as HTMLElement;
+                        if (activeEl) {
+                            activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }
+                }
+            }
         }
     };
 
@@ -672,15 +728,23 @@ export const MusicDate = () => {
                     <div className="w-full max-w-xl mx-auto bg-gray-900/40 backdrop-blur-2xl border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col items-center text-center transition-all mb-8">
                         <div className="relative w-64 h-64 shrink-0 shadow-2xl rounded-3xl overflow-hidden shadow-violet-900/50 mb-8 border border-white/10 group">
                             {showLyrics ? (
-                                <div className="w-full h-full bg-gray-950/80 backdrop-blur-3xl p-4 overflow-y-auto custom-scrollbar flex flex-col items-center">
+                                <div ref={lyricsContainerRef} className="w-full h-full bg-gray-950/80 backdrop-blur-3xl p-4 overflow-y-auto custom-scrollbar flex flex-col items-center scroll-smooth">
                                     {isLoadingLyrics ? (
-                                        <div className="flex-1 flex items-center justify-center">
+                                        <div className="flex-1 flex items-center justify-center h-full">
                                             <Loader className="w-6 h-6 text-violet-500 animate-spin" />
+                                        </div>
+                                    ) : lyricsData ? (
+                                        <div className="w-full text-center pb-12 mt-4 px-2 space-y-4 font-medium transition-all">
+                                            {lyricsData.map((line, idx) => (
+                                                <p key={idx} className={`transition-all duration-300 min-h-6 ${idx === activeLyricIndex ? 'text-white text-base scale-110 font-bold drop-shadow-[0_0_8px_rgba(139,92,246,0.8)]' : 'text-gray-500 text-sm'}`}>
+                                                    {line.text}
+                                                </p>
+                                            ))}
                                         </div>
                                     ) : (
                                         <div
                                             className="text-xs md:text-sm text-gray-300 text-center leading-loose pb-12 mt-4 font-mono w-full px-2"
-                                            dangerouslySetInnerHTML={{ __html: lyricsData || '' }}
+                                            dangerouslySetInnerHTML={{ __html: plainLyrics || '' }}
                                         />
                                     )}
                                 </div>
