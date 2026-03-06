@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Peer, { DataConnection } from 'peerjs';
 import { useAuth } from '../../context/AuthContext';
@@ -21,13 +21,19 @@ interface PeerStream {
     stream: MediaStream;
 }
 
-const StreamVideo = ({ stream, muted = false, mirrored }: { stream: MediaStream, muted?: boolean, mirrored: boolean }) => {
+const StreamVideo = ({ stream, muted = false, mirrored, volume = 1 }: { stream: MediaStream, muted?: boolean, mirrored: boolean, volume?: number }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     useEffect(() => {
         if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
         }
     }, [stream]);
+
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.volume = volume;
+        }
+    }, [volume]);
     return (
         <video
             ref={videoRef}
@@ -57,6 +63,13 @@ export const MusicDate = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [queue, setQueue] = useState<Track[]>([]);
+
+    // Volume & Fullscreen State
+    const [showVolumeControls, setShowVolumeControls] = useState(false);
+    const [musicVolume, setMusicVolume] = useState(1);
+    const [partnerVolume, setPartnerVolume] = useState(1);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -229,6 +242,33 @@ export const MusicDate = () => {
     const broadcastSync = (action: string, payload: any = {}) => {
         if (!isHost && action !== 'queue_add') return;
         broadcastData({ type: 'SYNC_PLAYER', action, ...payload });
+    };
+
+    // Fullscreen and Volume Effects
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.volume = musicVolume;
+        }
+    }, [musicVolume]);
+
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    const toggleFullscreen = async () => {
+        if (!document.fullscreenElement) {
+            if (containerRef.current?.requestFullscreen) {
+                await containerRef.current.requestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                await document.exitFullscreen();
+            }
+        }
     };
 
     // Audio Sync Effects
@@ -486,27 +526,90 @@ export const MusicDate = () => {
     }
 
     return (
-        <div className="flex flex-col h-full w-full bg-[#050510] text-white overflow-hidden font-sans relative">
+        <div ref={containerRef} className="flex flex-col h-full w-full bg-[#050510] text-white overflow-hidden font-sans relative">
             <audio ref={audioRef} src={currentTrack?.media_url} onTimeUpdate={handleTimeUpdate} onEnded={handleSongEnded} />
 
-            {/* Header */}
-            <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md z-20">
-                <div className="flex items-center gap-4 border border-violet-500/30 bg-violet-500/10 px-4 py-1.5 rounded-full">
-                    <span className="font-bold text-gray-200">{roomName}</span>
-                    <div className="w-px h-4 bg-white/20" />
-                    <span className="font-mono text-neon font-bold flex items-center gap-1 cursor-pointer">
-                        <Hash className="w-3 h-3" /> {roomCode}
-                    </span>
+            {/* Header / Nav Bar */}
+            {!isFullscreen && (
+                <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md z-20">
+                    <div className="flex items-center gap-4 border border-violet-500/30 bg-violet-500/10 px-4 py-1.5 rounded-full">
+                        <span className="font-bold text-gray-200">{roomName}</span>
+                        <div className="w-px h-4 bg-white/20" />
+                        <span className="font-mono text-neon font-bold flex items-center gap-1 cursor-pointer">
+                            <Hash className="w-3 h-3" /> {roomCode}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="relative">
+                            <button onClick={() => setShowVolumeControls(!showVolumeControls)} className={`p-2 rounded-xl transition-colors ${showVolumeControls ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-gray-800 text-gray-400'}`}>
+                                <Volume2 className="w-5 h-5" />
+                            </button>
+                            {showVolumeControls && (
+                                <div className="absolute top-12 right-0 w-64 bg-gray-900 border border-white/10 rounded-2xl p-5 shadow-2xl z-50 flex flex-col gap-6">
+                                    <div>
+                                        <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                            <span>Music Volume</span>
+                                            <span>{Math.round(musicVolume * 100)}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="1" step="0.01" value={musicVolume} onChange={e => setMusicVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500" />
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                            <span>Partner Volume</span>
+                                            <span>{Math.round(partnerVolume * 100)}%</span>
+                                        </div>
+                                        <input type="range" min="0" max="1" step="0.01" value={partnerVolume} onChange={e => setPartnerVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500" />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-xl transition-colors ${showChat ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-gray-800 text-gray-400'}`}>
+                            <MessageSquare className="w-5 h-5" />
+                        </button>
+                        <button onClick={toggleFullscreen} className="p-2 rounded-xl hover:bg-gray-800 text-gray-400 transition-colors">
+                            <Maximize className="w-5 h-5" />
+                        </button>
+                        <button onClick={() => setMode('landing')} className="p-2 rounded-xl hover:bg-red-500/10 text-red-500 transition-colors">
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-xl transition-colors ${showChat ? 'bg-violet-500/20 text-violet-400' : 'hover:bg-gray-800 text-gray-400'}`}>
+            )}
+
+            {/* Float Controls in Fullscreen */}
+            {isFullscreen && (
+                <div className="absolute top-4 right-6 flex items-center gap-3 z-50">
+                    <div className="relative">
+                        <button onClick={() => setShowVolumeControls(!showVolumeControls)} className={`p-2 rounded-xl backdrop-blur-md transition-colors shadow-lg ${showVolumeControls ? 'bg-violet-500/80 text-white shadow-violet-500/20' : 'bg-black/60 hover:bg-black/80 text-gray-300'}`}>
+                            <Volume2 className="w-5 h-5" />
+                        </button>
+                        {showVolumeControls && (
+                            <div className="absolute top-12 right-0 w-64 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl z-50 flex flex-col gap-6">
+                                <div>
+                                    <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                        <span>Music Volume</span>
+                                        <span>{Math.round(musicVolume * 100)}%</span>
+                                    </div>
+                                    <input type="range" min="0" max="1" step="0.01" value={musicVolume} onChange={e => setMusicVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500" />
+                                </div>
+                                <div>
+                                    <div className="flex justify-between text-xs text-gray-400 mb-2">
+                                        <span>Partner Volume</span>
+                                        <span>{Math.round(partnerVolume * 100)}%</span>
+                                    </div>
+                                    <input type="range" min="0" max="1" step="0.01" value={partnerVolume} onChange={e => setPartnerVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-violet-500" />
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <button onClick={() => setShowChat(!showChat)} className={`p-2 rounded-xl backdrop-blur-md transition-colors shadow-lg ${showChat ? 'bg-violet-500/80 text-white shadow-violet-500/20' : 'bg-black/60 hover:bg-black/80 text-gray-300'}`}>
                         <MessageSquare className="w-5 h-5" />
                     </button>
-                    <button onClick={() => setMode('landing')} className="p-2 rounded-xl hover:bg-red-500/10 text-red-500 transition-colors">
-                        <LogOut className="w-5 h-5" />
+                    <button onClick={toggleFullscreen} className="p-2 rounded-xl backdrop-blur-md bg-black/60 hover:bg-black/80 text-gray-300 transition-colors shadow-lg">
+                        <Minimize className="w-5 h-5" />
                     </button>
                 </div>
-            </div>
+            )}
 
             <div className="flex-1 flex overflow-hidden relative">
 
@@ -573,63 +676,65 @@ export const MusicDate = () => {
                     </div>
                 </div>
 
-                {/* Right Panel: Search & Queue */}
-                <div className="w-96 border-l border-white/5 bg-black/40 backdrop-blur-md z-20 flex flex-col flex-shrink-0">
-                    <div className="p-4 border-b border-white/5 bg-gray-950/50">
-                        <form onSubmit={handleSearch} className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                placeholder="Search for a song..."
-                                className="w-full bg-gray-900/60 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors"
-                            />
-                        </form>
-                    </div>
+                {/* Right Panel: Search & Queue (Hidden in Fullscreen) */}
+                {!isFullscreen && (
+                    <div className="w-96 border-l border-white/5 bg-black/40 backdrop-blur-md z-20 flex flex-col flex-shrink-0">
+                        <div className="p-4 border-b border-white/5 bg-gray-950/50">
+                            <form onSubmit={handleSearch} className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    placeholder="Search for a song..."
+                                    className="w-full bg-gray-900/60 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-violet-500 transition-colors"
+                                />
+                            </form>
+                        </div>
 
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
-                        {searchResults.length > 0 && (
-                            <div className="mb-6">
-                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Search Results</h3>
-                                <div className="space-y-1">
-                                    {searchResults.map((track) => (
-                                        <div key={track.id} onClick={() => handleTrackSelect(track)} className="flex items-center gap-3 hover:bg-white/5 p-2 rounded-xl cursor-pointer transition-colors group">
-                                            <img src={track.image} alt={track.song} className="w-10 h-10 rounded-md object-cover" />
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="text-white text-sm font-bold truncate group-hover:text-violet-300">{track.song}</h4>
-                                                <p className="text-gray-400 text-xs truncate">{track.singers}</p>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3">
+                            {searchResults.length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Search Results</h3>
+                                    <div className="space-y-1">
+                                        {searchResults.map((track) => (
+                                            <div key={track.id} onClick={() => handleTrackSelect(track)} className="flex items-center gap-3 hover:bg-white/5 p-2 rounded-xl cursor-pointer transition-colors group">
+                                                <img src={track.image} alt={track.song} className="w-10 h-10 rounded-md object-cover" />
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-white text-sm font-bold truncate group-hover:text-violet-300">{track.song}</h4>
+                                                    <p className="text-gray-400 text-xs truncate">{track.singers}</p>
+                                                </div>
+                                                <button className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                    <PlusCircle className="w-3 h-3" />
+                                                </button>
                                             </div>
-                                            <button className="w-6 h-6 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                                                <PlusCircle className="w-3 h-3" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        <div>
-                            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Up Next Queue ({queue.length})</h3>
-                            {queue.length === 0 ? (
-                                <p className="text-sm text-gray-600 px-2 italic">Queue is empty</p>
-                            ) : (
-                                <div className="space-y-1">
-                                    {queue.map((track, idx) => (
-                                        <div key={`${track.id}-${idx}`} className="flex items-center gap-3 bg-white/5 p-2 rounded-xl border border-white/5">
-                                            <span className="text-xs text-gray-500 w-4 font-mono text-center">{idx + 1}</span>
-                                            <img src={track.image} alt={track.song} className="w-8 h-8 rounded-md object-cover" />
-                                            <div className="flex-1 min-w-0">
-                                                <h4 className="text-white text-sm font-medium truncate">{track.song}</h4>
-                                                <p className="text-gray-400 text-[10px] truncate">{track.singers}</p>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
                             )}
+
+                            <div>
+                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2 mb-2">Up Next Queue ({queue.length})</h3>
+                                {queue.length === 0 ? (
+                                    <p className="text-sm text-gray-600 px-2 italic">Queue is empty</p>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {queue.map((track, idx) => (
+                                            <div key={`${track.id}-${idx}`} className="flex items-center gap-3 bg-white/5 p-2 rounded-xl border border-white/5">
+                                                <span className="text-xs text-gray-500 w-4 font-mono text-center">{idx + 1}</span>
+                                                <img src={track.image} alt={track.song} className="w-8 h-8 rounded-md object-cover" />
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="text-white text-sm font-medium truncate">{track.song}</h4>
+                                                    <p className="text-gray-400 text-[10px] truncate">{track.singers}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Chat Panel - Absolutely Positioned if open */}
                 {showChat && (
@@ -689,7 +794,7 @@ export const MusicDate = () => {
                         }}
                         className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
                     >
-                        <StreamVideo stream={peer.stream} mirrored={true} />
+                        <StreamVideo stream={peer.stream} mirrored={true} volume={partnerVolume} />
                         <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">{peerNames[peer.peerId] || 'Peer'}</span>
                     </div>
                 ))}
