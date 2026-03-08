@@ -121,11 +121,13 @@ export const MusicDate = () => {
     const isMobile = useIsMobile();
     const [showMobileMusic, setShowMobileMusic] = useState(false);
     const isConnected = peers.length > 0;
-    const showVideoFocus = isMobile && isConnected && !showMobileMusic;
+
+    // Call View is when we are on mobile and NOT explicitly looking at music
+    const isMobileCallView = isMobile && !showMobileMusic;
 
     // Navbar hiding logic
     useEffect(() => {
-        if (isMobile && isConnected) {
+        if (isMobile && mode === 'room') {
             window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: true }));
         } else {
             window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: false }));
@@ -133,7 +135,7 @@ export const MusicDate = () => {
         return () => {
             window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: false }));
         };
-    }, [isMobile, isConnected]);
+    }, [isMobile, mode]);
 
     const peerInstance = useRef<Peer | null>(null);
     const connections = useRef<{ [key: string]: DataConnection }>({});
@@ -660,7 +662,7 @@ export const MusicDate = () => {
             <audio ref={audioRef} src={currentTrack?.media_url} onTimeUpdate={handleTimeUpdate} onEnded={handleSongEnded} />
 
             {/* Header / Nav Bar */}
-            {!isFullscreen && !showVideoFocus && (
+            {!isFullscreen && !isMobile && (
                 <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md relative z-30">
                     <div className="flex items-center gap-4 border border-violet-500/30 bg-violet-500/10 px-4 py-1.5 rounded-full">
                         <span className="font-bold text-gray-200">{roomName}</span>
@@ -741,7 +743,7 @@ export const MusicDate = () => {
                 </div>
             )}
 
-            <div className={`flex-1 flex flex-col md:flex-row overflow-hidden relative ${showVideoFocus ? 'hidden' : ''}`}>
+            <div className={`flex-1 flex flex-col md:flex-row overflow-hidden relative ${isMobileCallView ? 'hidden' : ''}`}>
 
                 {/* Top Actions in Mobile Music View */}
                 {isMobile && showMobileMusic && (
@@ -951,43 +953,54 @@ export const MusicDate = () => {
             </div>
 
             {/* Video Grids Overlay - Draggable Absolute Position */}
-            <div className={`absolute inset-0 pointer-events-none z-40 overflow-hidden ${showVideoFocus ? 'pointer-events-auto bg-black' : ''}`}>
+            <div className={`absolute inset-0 pointer-events-none z-40 overflow-hidden ${isMobileCallView ? 'pointer-events-auto bg-black' : ''}`}>
+                {/* Waiting for Partner Overlay */}
+                {isMobileCallView && !isConnected && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+                        <Loader className="w-12 h-12 text-violet-500 animate-spin mb-6" />
+                        <h2 className="text-2xl font-bold text-white tracking-wide">Waiting for partner...</h2>
+                        <p className="text-violet-300 text-base mt-3 font-mono bg-violet-500/10 px-4 py-1.5 rounded-full border border-violet-500/20 shadow-lg">Room: {roomCode}</p>
+                    </div>
+                )}
+
                 {/* Remote Streams */}
                 {peers.map((peer, i) => (
                     <div
                         key={peer.peerId}
-                        onMouseDown={(e) => !showVideoFocus && handleCamMouseDown(e, peer.peerId)}
-                        style={showVideoFocus ? {} : {
+                        onMouseDown={(e) => !isMobileCallView && handleCamMouseDown(e, peer.peerId)}
+                        style={isMobileCallView ? {} : {
                             transform: `translate(${camPositions[peer.peerId]?.x || 24}px, ${camPositions[peer.peerId]?.y || 24 + ((i + 1) * 140)}px)`,
                             position: 'absolute', top: 0, left: 0
                         }}
                         className={
-                            showVideoFocus
-                                ? "absolute inset-0 w-full h-full bg-black z-0 pointer-events-auto"
+                            isMobileCallView
+                                ? "absolute inset-0 w-full h-full bg-black z-0 pointer-events-auto object-cover"
                                 : "w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
                         }
                     >
                         <StreamVideo stream={peer.stream} mirrored={true} volume={partnerVolume} />
-                        {!showVideoFocus && <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">{peerNames[peer.peerId] || 'Peer'}</span>}
+                        {!isMobileCallView && <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">{peerNames[peer.peerId] || 'Peer'}</span>}
                     </div>
                 ))}
 
                 {/* Local Stream */}
                 {myStream && (
                     <div
-                        onMouseDown={(e) => !showVideoFocus && handleCamMouseDown(e, 'me')}
-                        style={showVideoFocus ? {} : {
+                        onMouseDown={(e) => !isMobileCallView && handleCamMouseDown(e, 'me')}
+                        style={isMobileCallView ? {} : {
                             transform: `translate(${camPositions['me']?.x || 24}px, ${camPositions['me']?.y || 24}px)`,
                             position: 'absolute', top: 0, left: 0
                         }}
                         className={
-                            showVideoFocus
-                                ? "absolute bottom-32 right-6 w-28 h-40 bg-gray-900 rounded-xl overflow-hidden shadow-2xl z-20 pointer-events-auto border border-white/20"
+                            isMobileCallView
+                                ? (isConnected
+                                    ? "absolute bottom-32 right-6 w-28 h-40 bg-gray-900 rounded-xl overflow-hidden shadow-2xl z-20 pointer-events-auto border border-white/20"
+                                    : "absolute inset-0 w-full h-full bg-black z-0 pointer-events-auto")
                                 : "w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
                         }
                     >
                         <StreamVideo stream={myStream} muted={true} mirrored={true} />
-                        {!showVideoFocus && (
+                        {!isMobileCallView && (
                             <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center bg-black/40 backdrop-blur-md rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <span className="text-xs font-bold text-white">You</span>
                                 <div className="flex gap-1">
@@ -999,8 +1012,22 @@ export const MusicDate = () => {
                     </div>
                 )}
 
+                {/* Top Right Notch */}
+                {isMobileCallView && currentTrack && (
+                    <div className="absolute top-12 right-4 z-50 bg-gray-900/90 backdrop-blur-md rounded-full shadow-2xl border border-white/20 p-1.5 flex items-center gap-3 pr-3 pointer-events-auto animate-fade-in-down">
+                        <img src={currentTrack.image} alt={currentTrack.song} className={`w-10 h-10 rounded-full object-cover shadow-[0_0_15px_rgba(139,92,246,0.3)] ${isPlaying ? 'animate-[spin_4s_linear_infinite]' : ''}`} />
+                        <div className="flex flex-col max-w-[120px]">
+                            <span className="text-[10px] font-bold text-white truncate leading-tight mt-0.5">{currentTrack.song}</span>
+                            <span className="text-[8px] text-violet-300 truncate leading-tight capitalize">{currentTrack.singers}</span>
+                        </div>
+                        <button onClick={() => { setShowMobileMusic(true); if (!showLyrics) toggleLyrics(); }} className="p-2 bg-violet-600 rounded-full text-white ml-2 hover:bg-violet-500 transition-transform hover:scale-105 active:scale-95 shadow-lg shadow-violet-500/30">
+                            <FileText className="w-3 h-3" />
+                        </button>
+                    </div>
+                )}
+
                 {/* WhatsApp Mobile Controls */}
-                {showVideoFocus && (
+                {isMobileCallView && (
                     <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center gap-6 z-50 pointer-events-auto px-6">
                         <button onClick={toggleVideo} className={`w-[60px] h-[60px] rounded-full flex items-center justify-center backdrop-blur-md ${isVideoOff ? 'bg-white text-black' : 'bg-black/40 text-white'} border border-white/20 transition-all`}>
                             {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
