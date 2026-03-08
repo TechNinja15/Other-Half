@@ -1,9 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize, FileText, Image as ImageIcon, SkipForward } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Play, Pause, Search, Music, X, Hash, Users, Copy, PlusCircle, LogIn, LogOut, MessageSquare, Send, Mic, MicOff, Video, VideoOff, Loader, Volume2, Maximize, Minimize, FileText, Image as ImageIcon, SkipForward, PhoneOff } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Peer, { DataConnection } from 'peerjs';
 import { useAuth } from '../../context/AuthContext';
 import { analytics } from '../../utils/analytics';
+
+export const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+    return isMobile;
+};
 
 type DateMode = 'landing' | 'create_room' | 'join_room' | 'room';
 
@@ -106,6 +117,23 @@ export const MusicDate = () => {
         { user: 'System', text: 'Welcome to the Music Jam!' }
     ]);
     const [newMessage, setNewMessage] = useState('');
+
+    const isMobile = useIsMobile();
+    const [showMobileMusic, setShowMobileMusic] = useState(false);
+    const isConnected = peers.length > 0;
+    const showVideoFocus = isMobile && isConnected && !showMobileMusic;
+
+    // Navbar hiding logic
+    useEffect(() => {
+        if (isMobile && isConnected) {
+            window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: true }));
+        } else {
+            window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: false }));
+        }
+        return () => {
+            window.dispatchEvent(new CustomEvent('set-navbar-hidden', { detail: false }));
+        };
+    }, [isMobile, isConnected]);
 
     const peerInstance = useRef<Peer | null>(null);
     const connections = useRef<{ [key: string]: DataConnection }>({});
@@ -632,7 +660,7 @@ export const MusicDate = () => {
             <audio ref={audioRef} src={currentTrack?.media_url} onTimeUpdate={handleTimeUpdate} onEnded={handleSongEnded} />
 
             {/* Header / Nav Bar */}
-            {!isFullscreen && (
+            {!isFullscreen && !showVideoFocus && (
                 <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-black/40 backdrop-blur-md relative z-30">
                     <div className="flex items-center gap-4 border border-violet-500/30 bg-violet-500/10 px-4 py-1.5 rounded-full">
                         <span className="font-bold text-gray-200">{roomName}</span>
@@ -713,7 +741,15 @@ export const MusicDate = () => {
                 </div>
             )}
 
-            <div className="flex-1 flex overflow-hidden relative">
+            <div className={`flex-1 flex flex-col md:flex-row overflow-hidden relative ${showVideoFocus ? 'hidden' : ''}`}>
+
+                {/* Top Actions in Mobile Music View */}
+                {isMobile && showMobileMusic && (
+                    <button onClick={() => setShowMobileMusic(false)} className="absolute top-4 right-4 z-[60] bg-white/10 hover:bg-white/20 backdrop-blur-md p-3 rounded-full text-white border border-white/20 shadow-xl flex items-center gap-2 pr-4 pt-2.5 pb-2.5">
+                        <Video className="w-5 h-5 text-violet-400" />
+                        <span className="font-bold text-sm tracking-wide">Return to Call</span>
+                    </button>
+                )}
 
                 {/* Visualizer Background */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none overflow-hidden">
@@ -829,7 +865,7 @@ export const MusicDate = () => {
 
                 {/* Right Panel: Search & Queue (Hidden in Fullscreen) */}
                 {!isFullscreen && (
-                    <div className="w-96 border-l border-white/5 bg-black/40 backdrop-blur-md z-20 flex flex-col flex-shrink-0">
+                    <div className="w-full md:w-96 border-t md:border-t-0 md:border-l border-white/5 bg-black/40 backdrop-blur-md z-20 flex flex-col flex-shrink-0 h-[45vh] md:h-auto">
                         <div className="p-4 border-b border-white/5 bg-gray-950/50">
                             <form onSubmit={handleSearch} className="relative">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -915,40 +951,71 @@ export const MusicDate = () => {
             </div>
 
             {/* Video Grids Overlay - Draggable Absolute Position */}
-            <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
-                {myStream && (
-                    <div
-                        onMouseDown={(e) => handleCamMouseDown(e, 'me')}
-                        style={{
-                            transform: `translate(${camPositions['me']?.x || 24}px, ${camPositions['me']?.y || 24}px)`,
-                            position: 'absolute', top: 0, left: 0
-                        }}
-                        className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
-                    >
-                        <StreamVideo stream={myStream} muted={true} mirrored={true} />
-                        <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center bg-black/40 backdrop-blur-md rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="text-xs font-bold text-white">You</span>
-                            <div className="flex gap-1">
-                                <button onMouseDown={e => e.stopPropagation()} onClick={toggleMute} className={`p-1 rounded-md ${isMuted ? 'text-red-400' : 'text-gray-300 hover:text-white'}`}>{isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}</button>
-                                <button onMouseDown={e => e.stopPropagation()} onClick={toggleVideo} className={`p-1 rounded-md ${isVideoOff ? 'text-red-400' : 'text-gray-300 hover:text-white'}`}>{isVideoOff ? <VideoOff className="w-3 h-3" /> : <Video className="w-3 h-3" />}</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+            <div className={`absolute inset-0 pointer-events-none z-40 overflow-hidden ${showVideoFocus ? 'pointer-events-auto bg-black' : ''}`}>
+                {/* Remote Streams */}
                 {peers.map((peer, i) => (
                     <div
                         key={peer.peerId}
-                        onMouseDown={(e) => handleCamMouseDown(e, peer.peerId)}
-                        style={{
+                        onMouseDown={(e) => !showVideoFocus && handleCamMouseDown(e, peer.peerId)}
+                        style={showVideoFocus ? {} : {
                             transform: `translate(${camPositions[peer.peerId]?.x || 24}px, ${camPositions[peer.peerId]?.y || 24 + ((i + 1) * 140)}px)`,
                             position: 'absolute', top: 0, left: 0
                         }}
-                        className="w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
+                        className={
+                            showVideoFocus
+                                ? "absolute inset-0 w-full h-full bg-black z-0 pointer-events-auto"
+                                : "w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
+                        }
                     >
                         <StreamVideo stream={peer.stream} mirrored={true} volume={partnerVolume} />
-                        <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">{peerNames[peer.peerId] || 'Peer'}</span>
+                        {!showVideoFocus && <span className="absolute bottom-2 left-2 text-xs font-bold text-white bg-black/50 px-2 py-0.5 rounded-md backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity">{peerNames[peer.peerId] || 'Peer'}</span>}
                     </div>
                 ))}
+
+                {/* Local Stream */}
+                {myStream && (
+                    <div
+                        onMouseDown={(e) => !showVideoFocus && handleCamMouseDown(e, 'me')}
+                        style={showVideoFocus ? {} : {
+                            transform: `translate(${camPositions['me']?.x || 24}px, ${camPositions['me']?.y || 24}px)`,
+                            position: 'absolute', top: 0, left: 0
+                        }}
+                        className={
+                            showVideoFocus
+                                ? "absolute bottom-32 right-6 w-28 h-40 bg-gray-900 rounded-xl overflow-hidden shadow-2xl z-20 pointer-events-auto border border-white/20"
+                                : "w-32 h-24 md:w-48 md:h-32 bg-gray-900 rounded-2xl overflow-hidden border-2 border-white/10 shadow-2xl pointer-events-auto cursor-move shadow-black/50 group"
+                        }
+                    >
+                        <StreamVideo stream={myStream} muted={true} mirrored={true} />
+                        {!showVideoFocus && (
+                            <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center bg-black/40 backdrop-blur-md rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <span className="text-xs font-bold text-white">You</span>
+                                <div className="flex gap-1">
+                                    <button onMouseDown={e => e.stopPropagation()} onClick={toggleMute} className={`p-1 rounded-md ${isMuted ? 'text-red-400' : 'text-gray-300 hover:text-white'}`}>{isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}</button>
+                                    <button onMouseDown={e => e.stopPropagation()} onClick={toggleVideo} className={`p-1 rounded-md ${isVideoOff ? 'text-red-400' : 'text-gray-300 hover:text-white'}`}>{isVideoOff ? <VideoOff className="w-3 h-3" /> : <Video className="w-3 h-3" />}</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* WhatsApp Mobile Controls */}
+                {showVideoFocus && (
+                    <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center gap-6 z-50 pointer-events-auto px-6">
+                        <button onClick={toggleVideo} className={`w-[60px] h-[60px] rounded-full flex items-center justify-center backdrop-blur-md ${isVideoOff ? 'bg-white text-black' : 'bg-black/40 text-white'} border border-white/20 transition-all`}>
+                            {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+                        </button>
+                        <button onClick={toggleMute} className={`w-[60px] h-[60px] rounded-full flex items-center justify-center backdrop-blur-md ${isMuted ? 'bg-white text-black' : 'bg-black/40 text-white'} border border-white/20 transition-all`}>
+                            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                        </button>
+                        <button onClick={() => setShowMobileMusic(true)} className="w-[60px] h-[60px] rounded-full flex items-center justify-center backdrop-blur-md bg-violet-600 border border-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.5)] text-white hover:bg-violet-500 transition-all">
+                            <Music className="w-6 h-6" />
+                        </button>
+                        <button onClick={() => setMode('landing')} className="w-[60px] h-[60px] rounded-full flex items-center justify-center bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30 transition-all">
+                            <PhoneOff className="w-6 h-6" />
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Global Error Toast */}
